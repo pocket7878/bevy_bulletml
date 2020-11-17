@@ -6,10 +6,17 @@ before_install:
       fi
 matrix:
   include:
-    - rust: stable
-    - rust: beta
+    #- rust: stable
+    #- rust: beta
+    #- rust: nightly
     - rust: nightly
-    - rust: nightly
+      dist: bionic
+      addons:
+        apt:
+          #sources:
+          #  - ubuntu-toolchain-r-test
+          packages:
+            - llvm-10
       env:
         - CARGO_OPTIONS="--features backtrace"
         - COVERAGE=1
@@ -19,15 +26,15 @@ matrix:
 script:
     - |
       if [ "$COVERAGE" = "1" ] && [ -z "$TRAVIS_TAG" ]; then
-        export CARGO_INCREMENTAL=0;
-        export RUSTFLAGS="-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zno-landing-pads";
+        export RUSTFLAGS="-Zinstrument-coverage"
+        export LLVM_PROFILE_FILE="bulletml-%42m.profraw"
       fi
     - if [ "$TRAVIS_TAG" ]; then export CARGO_OPTIONS="${CARGO_OPTIONS} --release"; fi
     - cargo build --verbose $CARGO_OPTIONS
     - cargo test --verbose $CARGO_OPTIONS
     - |
       if [ "$COVERAGE" = "1" ] && [ -z "$TRAVIS_TAG" ]; then
-        zip -0 ccov.zip `find . -name "bulletml*.gc*" -print`;
-        ./grcov ccov.zip -s . -t lcov --llvm --branch --ignore-not-existing --ignore "/*" -o lcov.info;
-        bash <(curl -s https://codecov.io/bash) -f lcov.info;
+        llvm-profdata-10 merge -sparse bulletml-*.profraw -o bulletml.profdata;
+        llvm-cov-10 export $(find target/debug/ -type f -iregex '.*/bulletml-[0-9a-f]+') -instr-profile=bulletml.profdata --format=lcov >| lcov.txt;
+        bash <(curl -s https://codecov.io/bash) -f lcov.txt;
       fi
