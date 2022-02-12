@@ -1,5 +1,4 @@
-use bevy_ecs::prelude::*;
-use bevy_transform::prelude::*;
+use bevy::prelude::*;
 use indextree::{Arena, Node, NodeId};
 use std::collections::HashSet;
 use std::ops::{Deref, DerefMut};
@@ -1127,8 +1126,7 @@ mod test_runner {
     use super::{AppRunner, Runner, RunnerData, State};
     use crate::parse::BulletMLParser;
     use crate::tree::{BulletML, BulletMLNode};
-    use bevy_ecs::{prelude::*, system::CommandQueue};
-    use bevy_transform::prelude::*;
+    use bevy::{prelude::*, ecs::system::CommandQueue};
 
     pub struct TestAppRunner {
         index: usize,
