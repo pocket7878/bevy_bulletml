@@ -188,7 +188,7 @@ pub trait AppRunner<D, B: Component> {
     /// Gets this bullet's aim direction based on application data.
     ///
     /// The "target" related to the "aim" notion is application specific.
-    fn get_aim_direction(&self, data: &D, bullet: &B, target_transform: &Transform) -> f64;
+    fn get_aim_direction(&self, data: &D, bullet_transform: &Transform, target_transform: &Transform) -> f64;
     /// Gets this bullet's speed based on application data.
     fn get_bullet_speed(&self, data: &D, bullet: &B) -> f64;
     /// Gets the bullet default speed.
@@ -527,9 +527,9 @@ impl RunnerImpl {
                     self.run_bullet(data, runner, bullet, commands, bullet_transform, target_transform)
                 }
                 BulletMLNode::Action { .. } => self.run_action(node),
-                BulletMLNode::Fire { .. } => self.run_fire(data, runner, bullet, target_transform),
+                BulletMLNode::Fire { .. } => self.run_fire(data, runner, bullet, bullet_transform, target_transform),
                 BulletMLNode::ChangeDirection => {
-                    self.run_change_direction(data, runner, bullet, target_transform)
+                    self.run_change_direction(data, runner, bullet, bullet_transform, target_transform)
                 }
                 BulletMLNode::ChangeSpeed => self.run_change_speed(data, runner, bullet),
                 BulletMLNode::Accel => self.run_accel(data, runner, bullet),
@@ -662,6 +662,7 @@ impl RunnerImpl {
         data: &mut RunnerData<D>,
         runner: &dyn AppRunner<D, B>,
         bullet: &B,
+        bullet_transform: &Transform,
         target_transform: &Transform,
     ) -> f64 {
         let direction = self.get_number_contents(expr, data, runner);
@@ -689,7 +690,7 @@ impl RunnerImpl {
             }
         };
         if aim {
-            direction += runner.get_aim_direction(data.data, bullet, target_transform);
+            direction += runner.get_aim_direction(data.data, bullet_transform, target_transform);
         }
         while direction > 360. {
             direction -= 360.
@@ -706,6 +707,7 @@ impl RunnerImpl {
         data: &mut RunnerData<D>,
         runner: &dyn AppRunner<D, B>,
         bullet: &B,
+        bullet_transform: &Transform,
         target_transform: &Transform,
     ) {
         if let Some(act) = self.act {
@@ -713,7 +715,7 @@ impl RunnerImpl {
                 Self::get_first_child_matching(&data.bml.arena, act, BulletMLNode::match_direction);
             if let Some((dir_type, dir)) = direction {
                 let direction =
-                    self.get_direction(dir_type, dir, data, runner, bullet, target_transform);
+                    self.get_direction(dir_type, dir, data, runner, bullet, bullet_transform, target_transform);
                 self.dir.set(direction);
             }
         }
@@ -771,14 +773,14 @@ impl RunnerImpl {
     ) {
         let arena = &data.bml.arena;
         self.set_speed(data, runner, bullet);
-        self.set_direction(data, runner, bullet, target_transform);
+        self.set_direction(data, runner, bullet, bullet_transform, target_transform);
         if !self.spd.is_valid() {
             let default = runner.get_default_speed();
             self.spd.set(default);
             self.prev_spd.set(default);
         }
         if !self.dir.is_valid() {
-            let default = runner.get_aim_direction(data.data, bullet, target_transform);
+            let default = runner.get_aim_direction(data.data, bullet_transform, target_transform);
             self.dir.set(default);
             self.prev_dir.set(default);
         }
@@ -811,11 +813,12 @@ impl RunnerImpl {
         data: &mut RunnerData<D>,
         runner: &dyn AppRunner<D, B>,
         bullet: &B,
+        bullet_transform: &Transform,
         target_transform: &Transform,
     ) {
         self.shot_init();
         self.set_speed(data, runner, bullet);
-        self.set_direction(data, runner, bullet, target_transform);
+        self.set_direction(data, runner, bullet, bullet_transform, target_transform);
         if let Some(act) = self.act {
             let arena = &data.bml.arena;
             let bullet =
@@ -884,6 +887,7 @@ impl RunnerImpl {
         data: &mut RunnerData<D>,
         runner: &dyn AppRunner<D, B>,
         bullet: &B,
+        bullet_transform: &Transform,
         target_transform: &Transform,
     ) {
         if let Some(act) = self.act {
@@ -904,6 +908,7 @@ impl RunnerImpl {
                                 data,
                                 runner,
                                 bullet,
+                                bullet_transform,
                                 target_transform,
                             ),
                             false,
@@ -1246,7 +1251,7 @@ mod test_runner {
         fn get_aim_direction(
             &self,
             _data: &TestAppData<'a>,
-            _bullet: &TestBullet,
+            _bullet_transform: &Transform,
             _target_transform: &Transform,
         ) -> f64 {
             0.
