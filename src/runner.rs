@@ -1,4 +1,5 @@
-use bevy::prelude::*;
+use bevy_ecs::prelude::*;
+use bevy_transform::prelude::*;
 use indextree::{Arena, Node, NodeId};
 use std::collections::HashSet;
 use std::ops::{Deref, DerefMut};
@@ -132,7 +133,13 @@ impl<'a, R> Runner<R> {
         R: AppRunner<D, B>,
     {
         for runner in &mut self.runners {
-            runner.run(data, &mut self.app_runner, bullet, target_transform, commands);
+            runner.run(
+                data,
+                &mut self.app_runner,
+                bullet,
+                target_transform,
+                commands,
+            );
         }
     }
 
@@ -170,8 +177,7 @@ impl<R> DerefMut for Runner<R> {
 }
 
 /// Application specific BulletML runner trait.
-pub trait AppRunner<D, B: Component>
-{
+pub trait AppRunner<D, B: Component> {
     /// Initializes the runner.
     ///
     /// This function is called when a new [Runner](struct.Runner.html) is created/reused.
@@ -512,10 +518,14 @@ impl RunnerImpl {
             #[cfg(test)]
             runner.log(&mut data.data, node.get());
             match node.get() {
-                BulletMLNode::Bullet { .. } => self.run_bullet(data, runner, bullet, commands, target_transform),
+                BulletMLNode::Bullet { .. } => {
+                    self.run_bullet(data, runner, bullet, commands, target_transform)
+                }
                 BulletMLNode::Action { .. } => self.run_action(node),
                 BulletMLNode::Fire { .. } => self.run_fire(data, runner, bullet, target_transform),
-                BulletMLNode::ChangeDirection => self.run_change_direction(data, runner, bullet, target_transform),
+                BulletMLNode::ChangeDirection => {
+                    self.run_change_direction(data, runner, bullet, target_transform)
+                }
                 BulletMLNode::ChangeSpeed => self.run_change_speed(data, runner, bullet),
                 BulletMLNode::Accel => self.run_accel(data, runner, bullet),
                 BulletMLNode::Wait(expr) => self.run_wait(*expr, data, runner),
@@ -697,7 +707,8 @@ impl RunnerImpl {
             let direction =
                 Self::get_first_child_matching(&data.bml.arena, act, BulletMLNode::match_direction);
             if let Some((dir_type, dir)) = direction {
-                let direction = self.get_direction(dir_type, dir, data, runner, bullet, target_transform);
+                let direction =
+                    self.get_direction(dir_type, dir, data, runner, bullet, target_transform);
                 self.dir.set(direction);
             }
         }
@@ -880,7 +891,14 @@ impl RunnerImpl {
                         (self.get_number_contents(dir, data, runner), true)
                     } else {
                         (
-                            self.get_direction(dir_type, dir, data, runner, bullet, target_transform),
+                            self.get_direction(
+                                dir_type,
+                                dir,
+                                data,
+                                runner,
+                                bullet,
+                                target_transform,
+                            ),
                             false,
                         )
                     };
@@ -1109,7 +1127,8 @@ mod test_runner {
     use super::{AppRunner, Runner, RunnerData, State};
     use crate::parse::BulletMLParser;
     use crate::tree::{BulletML, BulletMLNode};
-    use bevy::{prelude::*, ecs::system::CommandQueue};
+    use bevy_ecs::{prelude::*, system::CommandQueue};
+    use bevy_transform::prelude::*;
 
     pub struct TestAppRunner {
         index: usize,
@@ -1218,7 +1237,12 @@ mod test_runner {
             0.
         }
 
-        fn get_aim_direction(&self, _data: &TestAppData<'a>, bullet: &TestBullet, target_transform: &Transform) -> f64 {
+        fn get_aim_direction(
+            &self,
+            _data: &TestAppData<'a>,
+            bullet: &TestBullet,
+            target_transform: &Transform,
+        ) -> f64 {
             0.
         }
 
@@ -1278,7 +1302,12 @@ mod test_runner {
                 .push(format!("do_change_direction({})", direction));
         }
 
-        fn do_change_speed(&mut self, data: &mut TestAppData<'a>, speed: f64, bullet: &mut TestBullet) {
+        fn do_change_speed(
+            &mut self,
+            data: &mut TestAppData<'a>,
+            speed: f64,
+            bullet: &mut TestBullet,
+        ) {
             data.logs[self.index]
                 .log
                 .push(format!("do_change_speed({})", speed));
@@ -1338,7 +1367,14 @@ mod test_runner {
             }
         }
 
-        fn run_test(&mut self, max_iter: u32, logs: &mut Vec<TestLog>, bullet: &mut TestBullet, target_transform: &Transform, commands: &mut Commands) {
+        fn run_test(
+            &mut self,
+            max_iter: u32,
+            logs: &mut Vec<TestLog>,
+            bullet: &mut TestBullet,
+            target_transform: &Transform,
+            commands: &mut Commands,
+        ) {
             let runner = Runner::new(TestAppRunner::new(self.runners.len()), &self.bml);
             self.runners.push(runner);
             for i in 0..max_iter {
@@ -1369,7 +1405,13 @@ mod test_runner {
         let mut command_queue = CommandQueue::default();
         let world = World::new();
         let mut commands = Commands::new(&mut command_queue, &world);
-        manager.run_test(100, &mut logs, &mut bullet, &target_transform, &mut commands);
+        manager.run_test(
+            100,
+            &mut logs,
+            &mut bullet,
+            &target_transform,
+            &mut commands,
+        );
         logs[0].assert_log(r#"=== 0"#, 1);
         logs[0].assert_log(r#"Action(Some("top"))"#, 1);
         logs[0].assert_log(r#"Fire(None)"#, 1);
@@ -1410,7 +1452,13 @@ mod test_runner {
         let mut command_queue = CommandQueue::default();
         let world = World::new();
         let mut commands = Commands::new(&mut command_queue, &world);
-        manager.run_test(110000, &mut logs, &mut bullet, &target_transform, &mut commands);
+        manager.run_test(
+            110000,
+            &mut logs,
+            &mut bullet,
+            &target_transform,
+            &mut commands,
+        );
         logs[0].assert_log(r#"=== 0"#, 1);
         logs[0].assert_log(r#"Action(Some("top"))"#, 1);
         logs[0].assert_log(r#"Repeat"#, 1);
@@ -1566,7 +1614,13 @@ mod test_runner {
         let mut command_queue = CommandQueue::default();
         let world = World::new();
         let mut commands = Commands::new(&mut command_queue, &world);
-        manager.run_test(1000, &mut logs, &mut bullet, &target_transform, &mut commands);
+        manager.run_test(
+            1000,
+            &mut logs,
+            &mut bullet,
+            &target_transform,
+            &mut commands,
+        );
         logs[0].assert_log(r#"=== 0"#, 1);
         logs[0].assert_log(r#"Action(Some("top"))"#, 1);
         logs[0].assert_log(r#"Fire(None)"#, 1);
@@ -1679,7 +1733,13 @@ mod test_runner {
         let mut command_queue = CommandQueue::default();
         let world = World::new();
         let mut commands = Commands::new(&mut command_queue, &world);
-        manager.run_test(100, &mut logs, &mut bullet, &target_transform, &mut commands);
+        manager.run_test(
+            100,
+            &mut logs,
+            &mut bullet,
+            &target_transform,
+            &mut commands,
+        );
         logs[0].assert_log(r#"=== 0"#, 1);
         logs[0].assert_log(r#"Action(Some("top"))"#, 1);
         logs[0].assert_log(r#"ChangeSpeed"#, 1);
@@ -1764,7 +1824,13 @@ mod test_runner {
         let mut command_queue = CommandQueue::default();
         let world = World::new();
         let mut commands = Commands::new(&mut command_queue, &world);
-        manager.run_test(100, &mut logs, &mut bullet, &target_transform, &mut commands);
+        manager.run_test(
+            100,
+            &mut logs,
+            &mut bullet,
+            &target_transform,
+            &mut commands,
+        );
         logs[0].assert_log(r#"=== 0"#, 1);
         logs[0].assert_log(r#"Action(Some("top"))"#, 1);
         logs[0].assert_log(r#"Fire(None)"#, 1);
@@ -1872,7 +1938,13 @@ mod test_runner {
         let mut command_queue = CommandQueue::default();
         let world = World::new();
         let mut commands = Commands::new(&mut command_queue, &world);
-        manager.run_test(100, &mut logs, &mut bullet, &target_transform, &mut commands);
+        manager.run_test(
+            100,
+            &mut logs,
+            &mut bullet,
+            &target_transform,
+            &mut commands,
+        );
         logs[0].assert_log(r#"=== 0"#, 1);
         logs[0].assert_log(r#"Action(Some("top"))"#, 1);
         logs[0].assert_log(r#"Wait(Const(1.0))"#, 1);
@@ -1986,7 +2058,13 @@ mod test_runner {
         let mut command_queue = CommandQueue::default();
         let world = World::new();
         let mut commands = Commands::new(&mut command_queue, &world);
-        manager.run_test(100, &mut logs, &mut bullet, &target_transform, &mut commands);
+        manager.run_test(
+            100,
+            &mut logs,
+            &mut bullet,
+            &target_transform,
+            &mut commands,
+        );
         logs[0].assert_log(r#"=== 0"#, 1);
         logs[0].assert_log(r#"Action(Some("top"))"#, 1);
         logs[0].assert_log(r#"Wait(Const(1.0))"#, 1);

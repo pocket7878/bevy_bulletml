@@ -11,7 +11,8 @@ repository = "https://github.com/pocket7878/bevy_bulletml"
 version = "0.2.1"
 
 [dependencies]
-bevy = {git = "https://github.com/bevyengine/bevy" }
+bevy_ecs = {git = "https://github.com/bevyengine/bevy" }
+bevy_transform = {git = "https://github.com/bevyengine/bevy" }
 derive-new = "0.5"
 fasteval = "0.2"
 indextree = "4.0"
