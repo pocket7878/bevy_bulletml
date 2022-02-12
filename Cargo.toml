@@ -1,17 +1,20 @@
 [package]
-name = "bulletml"
-version = "0.2.1"
-authors = ["Arnaud de Bossoreille <arnaud.debossoreille@gmail.com>"]
-edition = "2018"
+authors = [
+  "Arnaud de Bossoreille <arnaud.debossoreille@gmail.com>",
+  "Pocket7878 <poketo7878@gmail.com>",
+]
+description = "BulletML library in Rust with Bevy game engine suppor"
+edition = "2021"
 license-file = "LICENSE"
-description = "BulletML library in Rust"
-documentation = "https://docs.rs/bulletml"
-repository = "https://github.com/arnodb/bulletml_rs"
+name = "bevy_bulletml"
+repository = "https://github.com/pocket7878/bevy_bulletml"
+version = "0.2.1"
 
 [dependencies]
+bevy = {git = "https://github.com/bevyengine/bevy", features = ["dynamic"]}
 derive-new = "0.5"
-indextree = "4.0"
 fasteval = "0.2"
+indextree = "4.0"
 regex = "1.3"
 roxmltree = "0.9"
 thiserror = "1.0"

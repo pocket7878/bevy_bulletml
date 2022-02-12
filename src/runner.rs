@@ -1,3 +1,4 @@
+use bevy::prelude::*;
 use indextree::{Arena, Node, NodeId};
 use std::collections::HashSet;
 use std::ops::{Deref, DerefMut};
@@ -70,9 +71,9 @@ impl<'a, R> Runner<R> {
     /// `app_runner` is the application runner which contains all the specific behaviours.
     ///
     /// `bml` is the parsed BulletML document to be used by the runner until the bullet dies.
-    pub fn init<D>(&mut self, bml: &BulletML)
+    pub fn init<D, B: Component>(&mut self, bml: &BulletML)
     where
-        R: AppRunner<D>,
+        R: AppRunner<D, B>,
     {
         let bml_type = bml.get_type();
         self.runners.clear();
@@ -109,9 +110,9 @@ impl<'a, R> Runner<R> {
     ///
     /// `state` is the state with which
     /// [AppRunner::create_bullet](trait.AppRunner.html#tymethod.create_bullet) is called.
-    pub fn init_from_state<D>(&mut self, state: State)
+    pub fn init_from_state<D, B: Component>(&mut self, state: State)
     where
-        R: AppRunner<D>,
+        R: AppRunner<D, B>,
     {
         self.runners.clear();
         self.runners.push(RunnerImpl::new(state));
@@ -121,12 +122,17 @@ impl<'a, R> Runner<R> {
     /// Runs one iteration of this runner.
     ///
     /// `data` contains the application data used in the [AppRunner](trait.AppRunner.html) callbacks.
-    pub fn run<D>(&mut self, data: &mut RunnerData<D>)
-    where
-        R: AppRunner<D>,
+    pub fn run<D, B: Component>(
+        &mut self,
+        data: &mut RunnerData<D>,
+        bullet: &mut B,
+        target_transform: &Transform,
+        commands: &mut Commands,
+    ) where
+        R: AppRunner<D, B>,
     {
         for runner in &mut self.runners {
-            runner.run(data, &mut self.app_runner);
+            runner.run(data, &mut self.app_runner, bullet, target_transform, commands);
         }
     }
 
@@ -164,19 +170,20 @@ impl<R> DerefMut for Runner<R> {
 }
 
 /// Application specific BulletML runner trait.
-pub trait AppRunner<D> {
+pub trait AppRunner<D, B: Component>
+{
     /// Initializes the runner.
     ///
     /// This function is called when a new [Runner](struct.Runner.html) is created/reused.
     fn init(&mut self) {}
     /// Gets this bullet's direction based on application data.
-    fn get_bullet_direction(&self, data: &D) -> f64;
+    fn get_bullet_direction(&self, data: &D, bullet: &B) -> f64;
     /// Gets this bullet's aim direction based on application data.
     ///
     /// The "target" related to the "aim" notion is application specific.
-    fn get_aim_direction(&self, data: &D) -> f64;
+    fn get_aim_direction(&self, data: &D, bullet: &B, target_transform: &Transform) -> f64;
     /// Gets this bullet's speed based on application data.
-    fn get_bullet_speed(&self, data: &D) -> f64;
+    fn get_bullet_speed(&self, data: &D, bullet: &B) -> f64;
     /// Gets the bullet default speed.
     fn get_default_speed(&self) -> f64;
     /// Gets the BulletML "rank", a value between 0 and 1 indicating the level of difficulty.
@@ -189,31 +196,44 @@ pub trait AppRunner<D> {
     ///
     /// Nevertheless there could be more complex use cases which involve creating a new runner with
     /// the same BulletML document or even another one.
-    fn create_simple_bullet(&mut self, data: &mut D, direction: f64, speed: f64);
+    fn create_simple_bullet(
+        &mut self,
+        data: &mut D,
+        direction: f64,
+        speed: f64,
+        commands: &mut Commands,
+    );
     /// Tells the application to create a bullet based on the given `state`, initial `direction`
     /// and initial `speed`.
     ///
     /// The typical use case is to create a new runner with the same BulletML document. See
     /// [Runner::new_from_state](struct.Runner.html#method.new_from_state) and
     /// [Runner::init_from_state](struct.Runner.html#method.init_from_state).
-    fn create_bullet(&mut self, data: &mut D, state: State, direction: f64, speed: f64);
+    fn create_bullet(
+        &mut self,
+        data: &mut D,
+        state: State,
+        direction: f64,
+        speed: f64,
+        commands: &mut Commands,
+    );
     /// Gets the current iteration number.
     fn get_turn(&self, data: &D) -> u32;
     /// Tells the application to make this bullet vanish.
-    fn do_vanish(&mut self, data: &mut D);
-    fn do_change_direction(&mut self, _data: &mut D, _direction: f64) {}
+    fn do_vanish(&mut self, data: &mut D, bullet: &mut B);
+    fn do_change_direction(&mut self, _data: &mut D, _direction: f64, bullet: &mut B) {}
     /// Tells the application to make this bullet change speed.
-    fn do_change_speed(&mut self, _data: &mut D, _speed: f64) {}
+    fn do_change_speed(&mut self, _data: &mut D, _speed: f64, bullet: &mut B) {}
     /// Tells the application to make this bullet accelerate.
-    fn do_accel_x(&mut self, _: f64) {}
+    fn do_accel_x(&mut self, _: f64, bullet: &mut B) {}
     /// Tells the application to make this bullet accelerate.
-    fn do_accel_y(&mut self, _: f64) {}
+    fn do_accel_y(&mut self, _: f64, bullet: &mut B) {}
     /// Gets this bullet's X speed.
-    fn get_bullet_speed_x(&self) -> f64 {
+    fn get_bullet_speed_x(&self, bullet: &B) -> f64 {
         0.
     }
     /// Gets this bullet's Y speed.
-    fn get_bullet_speed_y(&self) -> f64 {
+    fn get_bullet_speed_y(&self, bullet: &B) -> f64 {
         0.
     }
     /// Gets a new random value. The random number generator is managed by the application.
@@ -354,11 +374,18 @@ impl RunnerImpl {
         }
     }
 
-    fn run<D>(&mut self, data: &mut RunnerData<D>, runner: &mut dyn AppRunner<D>) {
+    fn run<D, B: Component>(
+        &mut self,
+        data: &mut RunnerData<D>,
+        runner: &mut dyn AppRunner<D, B>,
+        bullet: &mut B,
+        target_transform: &Transform,
+        commands: &mut Commands,
+    ) {
         if self.is_end() {
             return;
         }
-        self.changes(data, runner);
+        self.changes(data, runner, bullet);
         self.end_turn = runner.get_turn(data.data);
         if self.act.is_none() {
             if !self.is_turn_end()
@@ -375,7 +402,7 @@ impl RunnerImpl {
         if self.act_turn.is_none() {
             self.act_turn = Some(runner.get_turn(data.data));
         }
-        self.run_sub(data, runner);
+        self.run_sub(data, runner, bullet, target_transform, commands);
         match self.act {
             None => {
                 self.act_iter += 1;
@@ -401,14 +428,19 @@ impl RunnerImpl {
         }
     }
 
-    fn changes<D>(&mut self, data: &mut RunnerData<D>, runner: &mut dyn AppRunner<D>) {
+    fn changes<D, B: Component>(
+        &mut self,
+        data: &mut RunnerData<D>,
+        runner: &mut dyn AppRunner<D, B>,
+        bullet: &mut B,
+    ) {
         let now = runner.get_turn(data.data);
         let reset = if let Some(change_dir) = &self.change_dir {
             if change_dir.is_last(now) {
-                runner.do_change_direction(&mut data.data, change_dir.get_last());
+                runner.do_change_direction(&mut data.data, change_dir.get_last(), bullet);
                 true
             } else {
-                runner.do_change_direction(&mut data.data, change_dir.get_value(now));
+                runner.do_change_direction(&mut data.data, change_dir.get_value(now), bullet);
                 false
             }
         } else {
@@ -419,10 +451,10 @@ impl RunnerImpl {
         }
         let reset = if let Some(change_spd) = &self.change_spd {
             if change_spd.is_last(now) {
-                runner.do_change_speed(&mut data.data, change_spd.get_last());
+                runner.do_change_speed(&mut data.data, change_spd.get_last(), bullet);
                 true
             } else {
-                runner.do_change_speed(&mut data.data, change_spd.get_value(now));
+                runner.do_change_speed(&mut data.data, change_spd.get_value(now), bullet);
                 false
             }
         } else {
@@ -433,10 +465,10 @@ impl RunnerImpl {
         }
         let reset = if let Some(accel_x) = &self.accel_x {
             if accel_x.is_last(now) {
-                runner.do_accel_x(accel_x.get_last());
+                runner.do_accel_x(accel_x.get_last(), bullet);
                 true
             } else {
-                runner.do_accel_x(accel_x.get_value(now));
+                runner.do_accel_x(accel_x.get_value(now), bullet);
                 false
             }
         } else {
@@ -447,10 +479,10 @@ impl RunnerImpl {
         }
         let reset = if let Some(accel_y) = &self.accel_y {
             if accel_y.is_last(now) {
-                runner.do_accel_y(accel_y.get_last());
+                runner.do_accel_y(accel_y.get_last(), bullet);
                 true
             } else {
-                runner.do_accel_y(accel_y.get_value(now));
+                runner.do_accel_y(accel_y.get_value(now), bullet);
                 false
             }
         } else {
@@ -461,7 +493,14 @@ impl RunnerImpl {
         }
     }
 
-    fn run_sub<D>(&mut self, data: &mut RunnerData<D>, runner: &mut dyn AppRunner<D>) {
+    fn run_sub<D, B: Component>(
+        &mut self,
+        data: &mut RunnerData<D>,
+        runner: &mut dyn AppRunner<D, B>,
+        bullet: &mut B,
+        target_transform: &Transform,
+        commands: &mut Commands,
+    ) {
         let bml = data.bml;
         while let Some(act) = self.act {
             if self.is_turn_end() {
@@ -473,12 +512,12 @@ impl RunnerImpl {
             #[cfg(test)]
             runner.log(&mut data.data, node.get());
             match node.get() {
-                BulletMLNode::Bullet { .. } => self.run_bullet(data, runner),
+                BulletMLNode::Bullet { .. } => self.run_bullet(data, runner, bullet, commands, target_transform),
                 BulletMLNode::Action { .. } => self.run_action(node),
-                BulletMLNode::Fire { .. } => self.run_fire(data, runner),
-                BulletMLNode::ChangeDirection => self.run_change_direction(data, runner),
-                BulletMLNode::ChangeSpeed => self.run_change_speed(data, runner),
-                BulletMLNode::Accel => self.run_accel(data, runner),
+                BulletMLNode::Fire { .. } => self.run_fire(data, runner, bullet, target_transform),
+                BulletMLNode::ChangeDirection => self.run_change_direction(data, runner, bullet, target_transform),
+                BulletMLNode::ChangeSpeed => self.run_change_speed(data, runner, bullet),
+                BulletMLNode::Accel => self.run_accel(data, runner, bullet),
                 BulletMLNode::Wait(expr) => self.run_wait(*expr, data, runner),
                 BulletMLNode::Repeat => self.run_repeat(act, data, runner),
                 BulletMLNode::BulletRef(label) => {
@@ -490,7 +529,7 @@ impl RunnerImpl {
                 BulletMLNode::FireRef(label) => {
                     self.run_ref(act, bml.fire_refs[label], data, runner)
                 }
-                BulletMLNode::Vanish => self.run_vanish(data, runner),
+                BulletMLNode::Vanish => self.run_vanish(data, runner, bullet),
                 _ => (),
             }
             loop {
@@ -601,12 +640,14 @@ impl RunnerImpl {
         self.dir.invalidate();
     }
 
-    fn get_direction<D>(
+    fn get_direction<D, B: Component>(
         &mut self,
         dir_type: Option<DirectionType>,
         expr: BulletMLExpression,
         data: &mut RunnerData<D>,
-        runner: &dyn AppRunner<D>,
+        runner: &dyn AppRunner<D, B>,
+        bullet: &B,
+        target_transform: &Transform,
     ) -> f64 {
         let direction = self.get_number_contents(expr, data, runner);
         let (mut direction, aim) = match dir_type {
@@ -620,9 +661,10 @@ impl RunnerImpl {
                 },
                 false,
             ),
-            Some(DirectionType::Relative) => {
-                (direction + runner.get_bullet_direction(data.data), false)
-            }
+            Some(DirectionType::Relative) => (
+                direction + runner.get_bullet_direction(data.data, bullet),
+                false,
+            ),
             Some(DirectionType::Sequence) => {
                 if !self.prev_dir.is_valid() {
                     (0., true)
@@ -632,7 +674,7 @@ impl RunnerImpl {
             }
         };
         if aim {
-            direction += runner.get_aim_direction(data.data);
+            direction += runner.get_aim_direction(data.data, bullet, target_transform);
         }
         while direction > 360. {
             direction -= 360.
@@ -644,29 +686,36 @@ impl RunnerImpl {
         direction
     }
 
-    fn set_direction<D>(&mut self, data: &mut RunnerData<D>, runner: &dyn AppRunner<D>) {
+    fn set_direction<D, B: Component>(
+        &mut self,
+        data: &mut RunnerData<D>,
+        runner: &dyn AppRunner<D, B>,
+        bullet: &B,
+        target_transform: &Transform,
+    ) {
         if let Some(act) = self.act {
             let direction =
                 Self::get_first_child_matching(&data.bml.arena, act, BulletMLNode::match_direction);
             if let Some((dir_type, dir)) = direction {
-                let direction = self.get_direction(dir_type, dir, data, runner);
+                let direction = self.get_direction(dir_type, dir, data, runner, bullet, target_transform);
                 self.dir.set(direction);
             }
         }
     }
 
-    fn get_speed<D>(
+    fn get_speed<D, B: Component>(
         &mut self,
         spd_type: Option<SpeedType>,
         expr: BulletMLExpression,
         data: &mut RunnerData<D>,
-        runner: &dyn AppRunner<D>,
+        runner: &dyn AppRunner<D, B>,
+        bullet: &B,
     ) -> f64 {
         let mut speed = self.get_number_contents(expr, data, runner);
         speed = match spd_type {
             None => speed,
             Some(SpeedType::Absolute) => speed,
-            Some(SpeedType::Relative) => speed + runner.get_bullet_speed(data.data),
+            Some(SpeedType::Relative) => speed + runner.get_bullet_speed(data.data, bullet),
             Some(SpeedType::Sequence) => {
                 if !self.prev_spd.is_valid() {
                     1.
@@ -679,28 +728,40 @@ impl RunnerImpl {
         speed
     }
 
-    fn set_speed<D>(&mut self, data: &mut RunnerData<D>, runner: &dyn AppRunner<D>) {
+    fn set_speed<D, B: Component>(
+        &mut self,
+        data: &mut RunnerData<D>,
+        runner: &dyn AppRunner<D, B>,
+        bullet: &B,
+    ) {
         if let Some(act) = self.act {
             let speed =
                 Self::get_first_child_matching(&data.bml.arena, act, BulletMLNode::match_speed);
             if let Some((spd_type, spd)) = speed {
-                let speed = self.get_speed(spd_type, spd, data, runner);
+                let speed = self.get_speed(spd_type, spd, data, runner, bullet);
                 self.spd.set(speed);
             }
         }
     }
 
-    fn run_bullet<D>(&mut self, data: &mut RunnerData<D>, runner: &mut dyn AppRunner<D>) {
+    fn run_bullet<D, B: Component>(
+        &mut self,
+        data: &mut RunnerData<D>,
+        runner: &mut dyn AppRunner<D, B>,
+        bullet: &B,
+        commands: &mut Commands,
+        target_transform: &Transform,
+    ) {
         let arena = &data.bml.arena;
-        self.set_speed(data, runner);
-        self.set_direction(data, runner);
+        self.set_speed(data, runner, bullet);
+        self.set_direction(data, runner, bullet, target_transform);
         if !self.spd.is_valid() {
             let default = runner.get_default_speed();
             self.spd.set(default);
             self.prev_spd.set(default);
         }
         if !self.dir.is_valid() {
-            let default = runner.get_aim_direction(data.data);
+            let default = runner.get_aim_direction(data.data, bullet, target_transform);
             self.dir.set(default);
             self.prev_dir.set(default);
         }
@@ -709,22 +770,34 @@ impl RunnerImpl {
             |act| Self::get_children_ids_matching(arena, act, BulletMLNode::match_any_action),
         );
         if all_actions.is_empty() {
-            runner.create_simple_bullet(&mut data.data, self.dir.get(), self.spd.get());
+            runner.create_simple_bullet(&mut data.data, self.dir.get(), self.spd.get(), commands);
         } else {
             let state = State {
                 bml_type: self.bml_type,
                 nodes: all_actions.into_boxed_slice(),
                 parameters: self.parameters.clone(),
             };
-            runner.create_bullet(&mut data.data, state, self.dir.get(), self.spd.get());
+            runner.create_bullet(
+                &mut data.data,
+                state,
+                self.dir.get(),
+                self.spd.get(),
+                commands,
+            );
         }
         self.act = None;
     }
 
-    fn run_fire<D>(&mut self, data: &mut RunnerData<D>, runner: &dyn AppRunner<D>) {
+    fn run_fire<D, B: Component>(
+        &mut self,
+        data: &mut RunnerData<D>,
+        runner: &dyn AppRunner<D, B>,
+        bullet: &B,
+        target_transform: &Transform,
+    ) {
         self.shot_init();
-        self.set_speed(data, runner);
-        self.set_direction(data, runner);
+        self.set_speed(data, runner, bullet);
+        self.set_direction(data, runner, bullet, target_transform);
         if let Some(act) = self.act {
             let arena = &data.bml.arena;
             let bullet =
@@ -739,18 +812,23 @@ impl RunnerImpl {
         self.act = node.first_child();
     }
 
-    fn run_wait<D>(
+    fn run_wait<D, B: Component>(
         &mut self,
         expr: BulletMLExpression,
         data: &mut RunnerData<D>,
-        runner: &dyn AppRunner<D>,
+        runner: &dyn AppRunner<D, B>,
     ) {
         let frame = self.get_number_contents(expr, data, runner);
         self.do_wait(frame as u32);
         self.act = None;
     }
 
-    fn run_repeat<D>(&mut self, act: NodeId, data: &mut RunnerData<D>, runner: &dyn AppRunner<D>) {
+    fn run_repeat<D, B: Component>(
+        &mut self,
+        act: NodeId,
+        data: &mut RunnerData<D>,
+        runner: &dyn AppRunner<D, B>,
+    ) {
         let times = Self::get_first_child_matching(&data.bml.arena, act, BulletMLNode::match_times);
         if let Some(times) = times {
             let times = self.get_number_contents(times, data, runner) as usize;
@@ -766,12 +844,12 @@ impl RunnerImpl {
         }
     }
 
-    fn run_ref<D>(
+    fn run_ref<D, B: Component>(
         &mut self,
         act: NodeId,
         ref_id: NodeId,
         data: &mut RunnerData<D>,
-        runner: &dyn AppRunner<D>,
+        runner: &dyn AppRunner<D, B>,
     ) {
         let new_parameters = self.get_parameters(data, runner);
         let prev_parameters = std::mem::replace(&mut self.parameters, new_parameters);
@@ -783,7 +861,13 @@ impl RunnerImpl {
         self.act = Some(ref_id);
     }
 
-    fn run_change_direction<D>(&mut self, data: &mut RunnerData<D>, runner: &dyn AppRunner<D>) {
+    fn run_change_direction<D, B: Component>(
+        &mut self,
+        data: &mut RunnerData<D>,
+        runner: &dyn AppRunner<D, B>,
+        bullet: &B,
+        target_transform: &Transform,
+    ) {
         if let Some(act) = self.act {
             let arena = &data.bml.arena;
             let term = Self::get_first_child_matching(arena, act, BulletMLNode::match_term);
@@ -795,26 +879,30 @@ impl RunnerImpl {
                     let (dir, seq) = if let Some(DirectionType::Sequence) = dir_type {
                         (self.get_number_contents(dir, data, runner), true)
                     } else {
-                        (self.get_direction(dir_type, dir, data, runner), false)
+                        (
+                            self.get_direction(dir_type, dir, data, runner, bullet, target_transform),
+                            false,
+                        )
                     };
-                    self.calc_change_direction(dir, term, seq, data, runner);
+                    self.calc_change_direction(dir, term, seq, data, runner, bullet);
                 }
             }
         }
         self.act = None;
     }
 
-    fn calc_change_direction<D>(
+    fn calc_change_direction<D, B: Component>(
         &mut self,
         direction: f64,
         term: u32,
         seq: bool,
         data: &RunnerData<D>,
-        runner: &dyn AppRunner<D>,
+        runner: &dyn AppRunner<D, B>,
+        bullet: &B,
     ) {
         let act_turn = self.act_turn.unwrap_or(0);
         let final_turn = act_turn + term;
-        let dir_first = runner.get_bullet_direction(data.data);
+        let dir_first = runner.get_bullet_direction(data.data, bullet);
         if seq {
             self.change_dir = Some(LinearFunc::new(
                 act_turn,
@@ -843,7 +931,12 @@ impl RunnerImpl {
         }
     }
 
-    fn run_change_speed<D>(&mut self, data: &mut RunnerData<D>, runner: &dyn AppRunner<D>) {
+    fn run_change_speed<D, B: Component>(
+        &mut self,
+        data: &mut RunnerData<D>,
+        runner: &dyn AppRunner<D, B>,
+        bullet: &B,
+    ) {
         if let Some(act) = self.act {
             let arena = &data.bml.arena;
             let term = Self::get_first_child_matching(arena, act, BulletMLNode::match_term);
@@ -853,31 +946,37 @@ impl RunnerImpl {
                     let term = self.get_number_contents(term, data, runner) as u32;
                     let spd = if let Some(SpeedType::Sequence) = spd_type {
                         self.get_number_contents(spd, data, runner) * f64::from(term)
-                            + runner.get_bullet_speed(data.data)
+                            + runner.get_bullet_speed(data.data, bullet)
                     } else {
-                        self.get_speed(spd_type, spd, data, runner)
+                        self.get_speed(spd_type, spd, data, runner, bullet)
                     };
-                    self.calc_change_speed(spd, term, data, runner);
+                    self.calc_change_speed(spd, term, data, runner, bullet);
                 }
             }
         }
         self.act = None;
     }
 
-    fn calc_change_speed<D>(
+    fn calc_change_speed<D, B: Component>(
         &mut self,
         speed: f64,
         term: u32,
         data: &RunnerData<D>,
-        runner: &dyn AppRunner<D>,
+        runner: &dyn AppRunner<D, B>,
+        bullet: &B,
     ) {
         let act_turn = self.act_turn.unwrap_or(0);
         let final_turn = act_turn + term;
-        let spd_first = runner.get_bullet_speed(data.data);
+        let spd_first = runner.get_bullet_speed(data.data, bullet);
         self.change_spd = Some(LinearFunc::new(act_turn, final_turn, spd_first, speed));
     }
 
-    fn run_accel<D>(&mut self, data: &mut RunnerData<D>, runner: &dyn AppRunner<D>) {
+    fn run_accel<D, B: Component>(
+        &mut self,
+        data: &mut RunnerData<D>,
+        runner: &dyn AppRunner<D, B>,
+        bullet: &B,
+    ) {
         if let Some(act) = self.act {
             let arena = &data.bml.arena;
             let term = Self::get_first_child_matching(arena, act, BulletMLNode::match_term);
@@ -890,7 +989,7 @@ impl RunnerImpl {
                 if self.bml_type == Some(BulletMLType::Horizontal) {
                     if let Some((v_type, v)) = vertical {
                         self.accel_x = self.calc_accel_xy(
-                            runner.get_bullet_speed_x(),
+                            runner.get_bullet_speed_x(bullet),
                             self.get_number_contents(v, data, runner),
                             term,
                             v_type,
@@ -898,7 +997,7 @@ impl RunnerImpl {
                     }
                     if let Some((h_type, h)) = horizontal {
                         self.accel_y = self.calc_accel_xy(
-                            runner.get_bullet_speed_y(),
+                            runner.get_bullet_speed_y(bullet),
                             self.get_number_contents(h, data, runner),
                             term,
                             h_type,
@@ -907,7 +1006,7 @@ impl RunnerImpl {
                 } else {
                     if let Some((h_type, h)) = horizontal {
                         self.accel_x = self.calc_accel_xy(
-                            runner.get_bullet_speed_x(),
+                            runner.get_bullet_speed_x(bullet),
                             self.get_number_contents(h, data, runner),
                             term,
                             h_type,
@@ -915,7 +1014,7 @@ impl RunnerImpl {
                     }
                     if let Some((v_type, v)) = vertical {
                         self.accel_y = self.calc_accel_xy(
-                            runner.get_bullet_speed_y(),
+                            runner.get_bullet_speed_y(bullet),
                             self.get_number_contents(v, data, runner),
                             term,
                             v_type,
@@ -944,12 +1043,21 @@ impl RunnerImpl {
         Some(LinearFunc::new(act_turn, final_turn, first_spd, final_spd))
     }
 
-    fn run_vanish<D>(&mut self, data: &mut RunnerData<D>, runner: &mut dyn AppRunner<D>) {
-        runner.do_vanish(&mut data.data);
+    fn run_vanish<D, B: Component>(
+        &mut self,
+        data: &mut RunnerData<D>,
+        runner: &mut dyn AppRunner<D, B>,
+        bullet: &mut B,
+    ) {
+        runner.do_vanish(&mut data.data, bullet);
         self.act = None;
     }
 
-    fn get_parameters<D>(&self, data: &mut RunnerData<D>, runner: &dyn AppRunner<D>) -> Parameters {
+    fn get_parameters<D, B: Component>(
+        &self,
+        data: &mut RunnerData<D>,
+        runner: &dyn AppRunner<D, B>,
+    ) -> Parameters {
         let children = self.act.unwrap().children(&data.bml.arena);
         let mut parameters = Vec::new();
         for child in children {
@@ -961,11 +1069,11 @@ impl RunnerImpl {
         parameters
     }
 
-    fn get_number_contents<D>(
+    fn get_number_contents<D, B: Component>(
         &self,
         expr: BulletMLExpression,
         data: &mut RunnerData<D>,
-        runner: &dyn AppRunner<D>,
+        runner: &dyn AppRunner<D, B>,
     ) -> f64 {
         match expr {
             BulletMLExpression::Const(value) => value,
@@ -1001,6 +1109,7 @@ mod test_runner {
     use super::{AppRunner, Runner, RunnerData, State};
     use crate::parse::BulletMLParser;
     use crate::tree::{BulletML, BulletMLNode};
+    use bevy::{prelude::*, ecs::system::CommandQueue};
 
     pub struct TestAppRunner {
         index: usize,
@@ -1013,6 +1122,10 @@ mod test_runner {
             runner.app_runner
         }
     }
+
+    /* bevy dummies */
+    #[derive(Component)]
+    struct TestBullet;
 
     struct TestLog {
         log: Vec<String>,
@@ -1100,16 +1213,16 @@ mod test_runner {
         logs: &'a mut Vec<TestLog>,
     }
 
-    impl<'a> AppRunner<TestAppData<'a>> for TestAppRunner {
-        fn get_bullet_direction(&self, _data: &TestAppData<'a>) -> f64 {
+    impl<'a> AppRunner<TestAppData<'a>, TestBullet> for TestAppRunner {
+        fn get_bullet_direction(&self, _data: &TestAppData<'a>, bullet: &TestBullet) -> f64 {
             0.
         }
 
-        fn get_aim_direction(&self, _data: &TestAppData<'a>) -> f64 {
+        fn get_aim_direction(&self, _data: &TestAppData<'a>, bullet: &TestBullet, target_transform: &Transform) -> f64 {
             0.
         }
 
-        fn get_bullet_speed(&self, _data: &TestAppData<'a>) -> f64 {
+        fn get_bullet_speed(&self, _data: &TestAppData<'a>, bullet: &TestBullet) -> f64 {
             1.
         }
 
@@ -1121,7 +1234,13 @@ mod test_runner {
             1.
         }
 
-        fn create_simple_bullet(&mut self, data: &mut TestAppData<'a>, direction: f64, speed: f64) {
+        fn create_simple_bullet(
+            &mut self,
+            data: &mut TestAppData<'a>,
+            direction: f64,
+            speed: f64,
+            commands: &mut Commands,
+        ) {
             data.logs[self.index]
                 .log
                 .push(format!("create_simple_bullet({}, {})", direction, speed));
@@ -1133,6 +1252,7 @@ mod test_runner {
             state: State,
             direction: f64,
             speed: f64,
+            commands: &mut Commands,
         ) {
             data.logs[self.index]
                 .log
@@ -1145,15 +1265,20 @@ mod test_runner {
             self.turn
         }
 
-        fn do_vanish(&mut self, _data: &mut TestAppData<'a>) {}
+        fn do_vanish(&mut self, _data: &mut TestAppData<'a>, bullet: &mut TestBullet) {}
 
-        fn do_change_direction(&mut self, data: &mut TestAppData<'a>, direction: f64) {
+        fn do_change_direction(
+            &mut self,
+            data: &mut TestAppData<'a>,
+            direction: f64,
+            bullet: &mut TestBullet,
+        ) {
             data.logs[self.index]
                 .log
                 .push(format!("do_change_direction({})", direction));
         }
 
-        fn do_change_speed(&mut self, data: &mut TestAppData<'a>, speed: f64) {
+        fn do_change_speed(&mut self, data: &mut TestAppData<'a>, speed: f64, bullet: &mut TestBullet) {
             data.logs[self.index]
                 .log
                 .push(format!("do_change_speed({})", speed));
@@ -1181,15 +1306,27 @@ mod test_runner {
             }
         }
 
-        fn run(&mut self, iteration: u32, logs: &mut Vec<TestLog>) {
+        fn run(
+            &mut self,
+            iteration: u32,
+            logs: &mut Vec<TestLog>,
+            bullet: &mut TestBullet,
+            target_transform: &Transform,
+            commands: &mut Commands,
+        ) {
             let mut new_runners = Vec::new();
             for runner in &mut self.runners {
                 if !runner.is_end() {
                     runner.app_runner.log_iteration(iteration, logs);
-                    runner.run(&mut RunnerData {
-                        bml: &self.bml,
-                        data: &mut TestAppData { logs },
-                    });
+                    runner.run(
+                        &mut RunnerData {
+                            bml: &self.bml,
+                            data: &mut TestAppData { logs },
+                        },
+                        bullet,
+                        target_transform,
+                        commands,
+                    );
                     new_runners.extend(&mut runner.new_runners.drain(..));
                     runner.app_runner.next_turn();
                 }
@@ -1201,11 +1338,11 @@ mod test_runner {
             }
         }
 
-        fn run_test(&mut self, max_iter: u32, logs: &mut Vec<TestLog>) {
+        fn run_test(&mut self, max_iter: u32, logs: &mut Vec<TestLog>, bullet: &mut TestBullet, target_transform: &Transform, commands: &mut Commands) {
             let runner = Runner::new(TestAppRunner::new(self.runners.len()), &self.bml);
             self.runners.push(runner);
             for i in 0..max_iter {
-                self.run(i, logs);
+                self.run(i, logs, bullet, target_transform, commands);
             }
         }
     }
@@ -1227,7 +1364,12 @@ mod test_runner {
             .unwrap();
         let mut manager = TestManager::new(bml);
         let mut logs = Vec::new();
-        manager.run_test(100, &mut logs);
+        let mut bullet = TestBullet;
+        let target_transform = Transform::default();
+        let mut command_queue = CommandQueue::default();
+        let world = World::new();
+        let mut commands = Commands::new(&mut command_queue, &world);
+        manager.run_test(100, &mut logs, &mut bullet, &target_transform, &mut commands);
         logs[0].assert_log(r#"=== 0"#, 1);
         logs[0].assert_log(r#"Action(Some("top"))"#, 1);
         logs[0].assert_log(r#"Fire(None)"#, 1);
@@ -1263,7 +1405,12 @@ mod test_runner {
             .unwrap();
         let mut manager = TestManager::new(bml);
         let mut logs = Vec::new();
-        manager.run_test(110000, &mut logs);
+        let mut bullet = TestBullet;
+        let target_transform = Transform::default();
+        let mut command_queue = CommandQueue::default();
+        let world = World::new();
+        let mut commands = Commands::new(&mut command_queue, &world);
+        manager.run_test(110000, &mut logs, &mut bullet, &target_transform, &mut commands);
         logs[0].assert_log(r#"=== 0"#, 1);
         logs[0].assert_log(r#"Action(Some("top"))"#, 1);
         logs[0].assert_log(r#"Repeat"#, 1);
@@ -1414,7 +1561,12 @@ mod test_runner {
             .unwrap();
         let mut manager = TestManager::new(bml);
         let mut logs = Vec::new();
-        manager.run_test(1000, &mut logs);
+        let mut bullet = TestBullet;
+        let target_transform = Transform::default();
+        let mut command_queue = CommandQueue::default();
+        let world = World::new();
+        let mut commands = Commands::new(&mut command_queue, &world);
+        manager.run_test(1000, &mut logs, &mut bullet, &target_transform, &mut commands);
         logs[0].assert_log(r#"=== 0"#, 1);
         logs[0].assert_log(r#"Action(Some("top"))"#, 1);
         logs[0].assert_log(r#"Fire(None)"#, 1);
@@ -1522,7 +1674,12 @@ mod test_runner {
             .unwrap();
         let mut manager = TestManager::new(bml);
         let mut logs = Vec::new();
-        manager.run_test(100, &mut logs);
+        let mut bullet = TestBullet;
+        let target_transform = Transform::default();
+        let mut command_queue = CommandQueue::default();
+        let world = World::new();
+        let mut commands = Commands::new(&mut command_queue, &world);
+        manager.run_test(100, &mut logs, &mut bullet, &target_transform, &mut commands);
         logs[0].assert_log(r#"=== 0"#, 1);
         logs[0].assert_log(r#"Action(Some("top"))"#, 1);
         logs[0].assert_log(r#"ChangeSpeed"#, 1);
@@ -1602,7 +1759,12 @@ mod test_runner {
             .unwrap();
         let mut manager = TestManager::new(bml);
         let mut logs = Vec::new();
-        manager.run_test(100, &mut logs);
+        let mut bullet = TestBullet;
+        let target_transform = Transform::default();
+        let mut command_queue = CommandQueue::default();
+        let world = World::new();
+        let mut commands = Commands::new(&mut command_queue, &world);
+        manager.run_test(100, &mut logs, &mut bullet, &target_transform, &mut commands);
         logs[0].assert_log(r#"=== 0"#, 1);
         logs[0].assert_log(r#"Action(Some("top"))"#, 1);
         logs[0].assert_log(r#"Fire(None)"#, 1);
@@ -1705,7 +1867,12 @@ mod test_runner {
             .unwrap();
         let mut manager = TestManager::new(bml);
         let mut logs = Vec::new();
-        manager.run_test(100, &mut logs);
+        let mut bullet = TestBullet;
+        let target_transform = Transform::default();
+        let mut command_queue = CommandQueue::default();
+        let world = World::new();
+        let mut commands = Commands::new(&mut command_queue, &world);
+        manager.run_test(100, &mut logs, &mut bullet, &target_transform, &mut commands);
         logs[0].assert_log(r#"=== 0"#, 1);
         logs[0].assert_log(r#"Action(Some("top"))"#, 1);
         logs[0].assert_log(r#"Wait(Const(1.0))"#, 1);
@@ -1814,7 +1981,12 @@ mod test_runner {
             .unwrap();
         let mut manager = TestManager::new(bml);
         let mut logs = Vec::new();
-        manager.run_test(100, &mut logs);
+        let mut bullet = TestBullet;
+        let target_transform = Transform::default();
+        let mut command_queue = CommandQueue::default();
+        let world = World::new();
+        let mut commands = Commands::new(&mut command_queue, &world);
+        manager.run_test(100, &mut logs, &mut bullet, &target_transform, &mut commands);
         logs[0].assert_log(r#"=== 0"#, 1);
         logs[0].assert_log(r#"Action(Some("top"))"#, 1);
         logs[0].assert_log(r#"Wait(Const(1.0))"#, 1);
