@@ -11,6 +11,7 @@ extern crate thiserror;
 pub use runner::{Runner, RunnerData};
 pub use app_runner::AppRunner;
 pub use tree::BulletML;
+pub use state::State;
 
 pub mod errors;
 pub mod parse;
