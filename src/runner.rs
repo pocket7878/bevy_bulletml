@@ -126,6 +126,7 @@ impl<'a, R> Runner<R> {
         &mut self,
         data: &mut RunnerData<D>,
         bullet: &mut B,
+        bullet_transform: &Transform,
         target_transform: &Transform,
         commands: &mut Commands,
     ) where
@@ -136,6 +137,7 @@ impl<'a, R> Runner<R> {
                 data,
                 &mut self.app_runner,
                 bullet,
+                bullet_transform,
                 target_transform,
                 commands,
             );
@@ -206,6 +208,7 @@ pub trait AppRunner<D, B: Component> {
         data: &mut D,
         direction: f64,
         speed: f64,
+        bullet_transform: &Transform,
         commands: &mut Commands,
     );
     /// Tells the application to create a bullet based on the given `state`, initial `direction`
@@ -220,6 +223,7 @@ pub trait AppRunner<D, B: Component> {
         state: State,
         direction: f64,
         speed: f64,
+        bullet_transform: &Transform,
         commands: &mut Commands,
     );
     /// Gets the current iteration number.
@@ -384,6 +388,7 @@ impl RunnerImpl {
         data: &mut RunnerData<D>,
         runner: &mut dyn AppRunner<D, B>,
         bullet: &mut B,
+        bullet_transform: &Transform,
         target_transform: &Transform,
         commands: &mut Commands,
     ) {
@@ -407,7 +412,7 @@ impl RunnerImpl {
         if self.act_turn.is_none() {
             self.act_turn = Some(runner.get_turn(data.data));
         }
-        self.run_sub(data, runner, bullet, target_transform, commands);
+        self.run_sub(data, runner, bullet, bullet_transform, target_transform, commands);
         match self.act {
             None => {
                 self.act_iter += 1;
@@ -503,6 +508,7 @@ impl RunnerImpl {
         data: &mut RunnerData<D>,
         runner: &mut dyn AppRunner<D, B>,
         bullet: &mut B,
+        bullet_transform: &Transform,
         target_transform: &Transform,
         commands: &mut Commands,
     ) {
@@ -518,7 +524,7 @@ impl RunnerImpl {
             runner.log(&mut data.data, node.get());
             match node.get() {
                 BulletMLNode::Bullet { .. } => {
-                    self.run_bullet(data, runner, bullet, commands, target_transform)
+                    self.run_bullet(data, runner, bullet, commands, bullet_transform, target_transform)
                 }
                 BulletMLNode::Action { .. } => self.run_action(node),
                 BulletMLNode::Fire { .. } => self.run_fire(data, runner, bullet, target_transform),
@@ -760,6 +766,7 @@ impl RunnerImpl {
         runner: &mut dyn AppRunner<D, B>,
         bullet: &B,
         commands: &mut Commands,
+        bullet_transform: &Transform,
         target_transform: &Transform,
     ) {
         let arena = &data.bml.arena;
@@ -780,7 +787,7 @@ impl RunnerImpl {
             |act| Self::get_children_ids_matching(arena, act, BulletMLNode::match_any_action),
         );
         if all_actions.is_empty() {
-            runner.create_simple_bullet(&mut data.data, self.dir.get(), self.spd.get(), commands);
+            runner.create_simple_bullet(&mut data.data, self.dir.get(), self.spd.get(), bullet_transform, commands);
         } else {
             let state = State {
                 bml_type: self.bml_type,
@@ -792,6 +799,7 @@ impl RunnerImpl {
                 state,
                 self.dir.get(),
                 self.spd.get(),
+                bullet_transform,
                 commands,
             );
         }
@@ -1261,6 +1269,7 @@ mod test_runner {
             data: &mut TestAppData<'a>,
             direction: f64,
             speed: f64,
+            _bullet_transform: &Transform,
             _commands: &mut Commands,
         ) {
             data.logs[self.index]
@@ -1274,6 +1283,7 @@ mod test_runner {
             state: State,
             direction: f64,
             speed: f64,
+            _bullet_transform: &Transform,
             _commands: &mut Commands,
         ) {
             data.logs[self.index]
@@ -1338,6 +1348,7 @@ mod test_runner {
             iteration: u32,
             logs: &mut Vec<TestLog>,
             bullet: &mut TestBullet,
+            bullet_transform: &Transform,
             target_transform: &Transform,
             commands: &mut Commands,
         ) {
@@ -1351,6 +1362,7 @@ mod test_runner {
                             data: &mut TestAppData { logs },
                         },
                         bullet,
+                        bullet_transform,
                         target_transform,
                         commands,
                     );
@@ -1370,13 +1382,14 @@ mod test_runner {
             max_iter: u32,
             logs: &mut Vec<TestLog>,
             bullet: &mut TestBullet,
+            bullet_transform: &Transform,
             target_transform: &Transform,
             commands: &mut Commands,
         ) {
             let runner = Runner::new(TestAppRunner::new(self.runners.len()), &self.bml);
             self.runners.push(runner);
             for i in 0..max_iter {
-                self.run(i, logs, bullet, target_transform, commands);
+                self.run(i, logs, bullet, bullet_transform, target_transform, commands);
             }
         }
     }
@@ -1399,6 +1412,7 @@ mod test_runner {
         let mut manager = TestManager::new(bml);
         let mut logs = Vec::new();
         let mut bullet = TestBullet;
+        let bullet_transform = Transform::default();
         let target_transform = Transform::default();
         let mut command_queue = CommandQueue::default();
         let world = World::new();
@@ -1407,6 +1421,7 @@ mod test_runner {
             100,
             &mut logs,
             &mut bullet,
+            &bullet_transform,
             &target_transform,
             &mut commands,
         );
@@ -1446,6 +1461,7 @@ mod test_runner {
         let mut manager = TestManager::new(bml);
         let mut logs = Vec::new();
         let mut bullet = TestBullet;
+        let bullet_transform = Transform::default();
         let target_transform = Transform::default();
         let mut command_queue = CommandQueue::default();
         let world = World::new();
@@ -1454,6 +1470,7 @@ mod test_runner {
             110000,
             &mut logs,
             &mut bullet,
+            &bullet_transform,
             &target_transform,
             &mut commands,
         );
@@ -1608,6 +1625,7 @@ mod test_runner {
         let mut manager = TestManager::new(bml);
         let mut logs = Vec::new();
         let mut bullet = TestBullet;
+        let bullet_transform = Transform::default();
         let target_transform = Transform::default();
         let mut command_queue = CommandQueue::default();
         let world = World::new();
@@ -1616,6 +1634,7 @@ mod test_runner {
             1000,
             &mut logs,
             &mut bullet,
+            &bullet_transform,
             &target_transform,
             &mut commands,
         );
@@ -1727,6 +1746,7 @@ mod test_runner {
         let mut manager = TestManager::new(bml);
         let mut logs = Vec::new();
         let mut bullet = TestBullet;
+        let bullet_transform = Transform::default();
         let target_transform = Transform::default();
         let mut command_queue = CommandQueue::default();
         let world = World::new();
@@ -1735,6 +1755,7 @@ mod test_runner {
             100,
             &mut logs,
             &mut bullet,
+            &bullet_transform,
             &target_transform,
             &mut commands,
         );
@@ -1818,6 +1839,7 @@ mod test_runner {
         let mut manager = TestManager::new(bml);
         let mut logs = Vec::new();
         let mut bullet = TestBullet;
+        let bullet_transform = Transform::default();
         let target_transform = Transform::default();
         let mut command_queue = CommandQueue::default();
         let world = World::new();
@@ -1826,6 +1848,7 @@ mod test_runner {
             100,
             &mut logs,
             &mut bullet,
+            &bullet_transform,
             &target_transform,
             &mut commands,
         );
@@ -1932,6 +1955,7 @@ mod test_runner {
         let mut manager = TestManager::new(bml);
         let mut logs = Vec::new();
         let mut bullet = TestBullet;
+        let bullet_transform = Transform::default();
         let target_transform = Transform::default();
         let mut command_queue = CommandQueue::default();
         let world = World::new();
@@ -1940,6 +1964,7 @@ mod test_runner {
             100,
             &mut logs,
             &mut bullet,
+            &bullet_transform,
             &target_transform,
             &mut commands,
         );
@@ -2052,6 +2077,7 @@ mod test_runner {
         let mut manager = TestManager::new(bml);
         let mut logs = Vec::new();
         let mut bullet = TestBullet;
+        let bullet_transform = Transform::default();
         let target_transform = Transform::default();
         let mut command_queue = CommandQueue::default();
         let world = World::new();
@@ -2060,6 +2086,7 @@ mod test_runner {
             100,
             &mut logs,
             &mut bullet,
+            &bullet_transform,
             &target_transform,
             &mut commands,
         );
