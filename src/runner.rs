@@ -227,19 +227,19 @@ pub trait AppRunner<D, B: Component> {
     fn get_turn(&self, data: &D) -> u32;
     /// Tells the application to make this bullet vanish.
     fn do_vanish(&mut self, data: &mut D, bullet: &mut B);
-    fn do_change_direction(&mut self, _data: &mut D, _direction: f64, bullet: &mut B) {}
+    fn do_change_direction(&mut self, _data: &mut D, _direction: f64, _bullet: &mut B) {}
     /// Tells the application to make this bullet change speed.
-    fn do_change_speed(&mut self, _data: &mut D, _speed: f64, bullet: &mut B) {}
+    fn do_change_speed(&mut self, _data: &mut D, _speed: f64, _bullet: &mut B) {}
     /// Tells the application to make this bullet accelerate.
-    fn do_accel_x(&mut self, _: f64, bullet: &mut B) {}
+    fn do_accel_x(&mut self, _: f64, _bullet: &mut B) {}
     /// Tells the application to make this bullet accelerate.
-    fn do_accel_y(&mut self, _: f64, bullet: &mut B) {}
+    fn do_accel_y(&mut self, _: f64, _bullet: &mut B) {}
     /// Gets this bullet's X speed.
-    fn get_bullet_speed_x(&self, bullet: &B) -> f64 {
+    fn get_bullet_speed_x(&self, _bullet: &B) -> f64 {
         0.
     }
     /// Gets this bullet's Y speed.
-    fn get_bullet_speed_y(&self, bullet: &B) -> f64 {
+    fn get_bullet_speed_y(&self, _bullet: &B) -> f64 {
         0.
     }
     /// Gets a new random value. The random number generator is managed by the application.
@@ -1233,20 +1233,20 @@ mod test_runner {
     }
 
     impl<'a> AppRunner<TestAppData<'a>, TestBullet> for TestAppRunner {
-        fn get_bullet_direction(&self, _data: &TestAppData<'a>, bullet: &TestBullet) -> f64 {
+        fn get_bullet_direction(&self, _data: &TestAppData<'a>, _bullet: &TestBullet) -> f64 {
             0.
         }
 
         fn get_aim_direction(
             &self,
             _data: &TestAppData<'a>,
-            bullet: &TestBullet,
-            target_transform: &Transform,
+            _bullet: &TestBullet,
+            _target_transform: &Transform,
         ) -> f64 {
             0.
         }
 
-        fn get_bullet_speed(&self, _data: &TestAppData<'a>, bullet: &TestBullet) -> f64 {
+        fn get_bullet_speed(&self, _data: &TestAppData<'a>, _bullet: &TestBullet) -> f64 {
             1.
         }
 
@@ -1263,7 +1263,7 @@ mod test_runner {
             data: &mut TestAppData<'a>,
             direction: f64,
             speed: f64,
-            commands: &mut Commands,
+            _commands: &mut Commands,
         ) {
             data.logs[self.index]
                 .log
@@ -1276,7 +1276,7 @@ mod test_runner {
             state: State,
             direction: f64,
             speed: f64,
-            commands: &mut Commands,
+            _commands: &mut Commands,
         ) {
             data.logs[self.index]
                 .log
@@ -1289,13 +1289,13 @@ mod test_runner {
             self.turn
         }
 
-        fn do_vanish(&mut self, _data: &mut TestAppData<'a>, bullet: &mut TestBullet) {}
+        fn do_vanish(&mut self, _data: &mut TestAppData<'a>, _bullet: &mut TestBullet) {}
 
         fn do_change_direction(
             &mut self,
             data: &mut TestAppData<'a>,
             direction: f64,
-            bullet: &mut TestBullet,
+            _bullet: &mut TestBullet,
         ) {
             data.logs[self.index]
                 .log
@@ -1306,7 +1306,7 @@ mod test_runner {
             &mut self,
             data: &mut TestAppData<'a>,
             speed: f64,
-            bullet: &mut TestBullet,
+            _bullet: &mut TestBullet,
         ) {
             data.logs[self.index]
                 .log
