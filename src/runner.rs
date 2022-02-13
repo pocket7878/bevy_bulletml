@@ -111,8 +111,8 @@ impl<R> Runner<R> {
         &mut self,
         data: &mut D,
         bullet: &mut B,
-        bullet_transform: &Transform,
-        target_transform: &Transform,
+        bullet_position: &Vec3,
+        target_position: &Vec3,
         commands: &mut Commands,
     ) where
         R: AppRunner<D, B>,
@@ -122,8 +122,8 @@ impl<R> Runner<R> {
                 data,
                 &mut self.app_runner,
                 bullet,
-                bullet_transform,
-                target_transform,
+                bullet_position,
+                target_position,
                 commands,
             );
         }
@@ -301,8 +301,8 @@ impl RunnerImpl {
         data: &mut D,
         runner: &mut dyn AppRunner<D, B>,
         bullet: &mut B,
-        bullet_transform: &Transform,
-        target_transform: &Transform,
+        bullet_position: &Vec3,
+        target_position: &Vec3,
         commands: &mut Commands,
     ) {
         if self.is_end() {
@@ -329,8 +329,8 @@ impl RunnerImpl {
             data,
             runner,
             bullet,
-            bullet_transform,
-            target_transform,
+            bullet_position,
+            target_position,
             commands,
         );
         match self.act {
@@ -428,8 +428,8 @@ impl RunnerImpl {
         data: &mut D,
         runner: &mut dyn AppRunner<D, B>,
         bullet: &mut B,
-        bullet_transform: &Transform,
-        target_transform: &Transform,
+        bullet_position: &Vec3,
+        target_position: &Vec3,
         commands: &mut Commands,
     ) {
         let bml = self.bml.clone();
@@ -448,19 +448,19 @@ impl RunnerImpl {
                     runner,
                     bullet,
                     commands,
-                    bullet_transform,
-                    target_transform,
+                    bullet_position,
+                    target_position,
                 ),
                 BulletMLNode::Action { .. } => self.run_action(node),
                 BulletMLNode::Fire { .. } => {
-                    self.run_fire(data, runner, bullet, bullet_transform, target_transform)
+                    self.run_fire(data, runner, bullet, bullet_position, target_position)
                 }
                 BulletMLNode::ChangeDirection => self.run_change_direction(
                     data,
                     runner,
                     bullet,
-                    bullet_transform,
-                    target_transform,
+                    bullet_position,
+                    target_position,
                 ),
                 BulletMLNode::ChangeSpeed => self.run_change_speed(data, runner, bullet),
                 BulletMLNode::Accel => self.run_accel(data, runner, bullet),
@@ -593,8 +593,8 @@ impl RunnerImpl {
         data: &mut D,
         runner: &dyn AppRunner<D, B>,
         bullet: &B,
-        bullet_transform: &Transform,
-        target_transform: &Transform,
+        bullet_position: &Vec3,
+        target_position: &Vec3,
     ) -> f64 {
         let direction = self.get_number_contents(expr, data, runner);
         let (mut direction, aim) = match dir_type {
@@ -620,7 +620,7 @@ impl RunnerImpl {
             }
         };
         if aim {
-            direction += runner.get_aim_direction(data, bullet_transform, target_transform);
+            direction += runner.get_aim_direction(data, bullet_position, target_position);
         }
         while direction > 360. {
             direction -= 360.
@@ -637,8 +637,8 @@ impl RunnerImpl {
         data: &mut D,
         runner: &dyn AppRunner<D, B>,
         bullet: &B,
-        bullet_transform: &Transform,
-        target_transform: &Transform,
+        bullet_position: &Vec3,
+        target_position: &Vec3,
     ) {
         if let Some(act) = self.act {
             let direction =
@@ -650,8 +650,8 @@ impl RunnerImpl {
                     data,
                     runner,
                     bullet,
-                    bullet_transform,
-                    target_transform,
+                    bullet_position,
+                    target_position,
                 );
                 self.dir.set(direction);
             }
@@ -705,11 +705,11 @@ impl RunnerImpl {
         runner: &mut dyn AppRunner<D, B>,
         bullet: &B,
         commands: &mut Commands,
-        bullet_transform: &Transform,
-        target_transform: &Transform,
+        bullet_position: &Vec3,
+        target_position: &Vec3,
     ) {
         self.set_speed(data, runner, bullet);
-        self.set_direction(data, runner, bullet, bullet_transform, target_transform);
+        self.set_direction(data, runner, bullet, bullet_position, target_position);
         let arena = &self.bml.arena;
         if !self.spd.is_valid() {
             let default = runner.get_default_speed();
@@ -717,7 +717,7 @@ impl RunnerImpl {
             self.prev_spd.set(default);
         }
         if !self.dir.is_valid() {
-            let default = runner.get_aim_direction(data, bullet_transform, target_transform);
+            let default = runner.get_aim_direction(data, bullet_position, target_position);
             self.dir.set(default);
             self.prev_dir.set(default);
         }
@@ -730,7 +730,7 @@ impl RunnerImpl {
                 data,
                 self.dir.get(),
                 self.spd.get(),
-                bullet_transform,
+                bullet_position,
                 commands,
             );
         } else {
@@ -745,7 +745,7 @@ impl RunnerImpl {
                 state,
                 self.dir.get(),
                 self.spd.get(),
-                bullet_transform,
+                bullet_position,
                 commands,
             );
         }
@@ -757,12 +757,12 @@ impl RunnerImpl {
         data: &mut D,
         runner: &dyn AppRunner<D, B>,
         bullet: &B,
-        bullet_transform: &Transform,
-        target_transform: &Transform,
+        bullet_position: &Vec3,
+        target_position: &Vec3,
     ) {
         self.shot_init();
         self.set_speed(data, runner, bullet);
-        self.set_direction(data, runner, bullet, bullet_transform, target_transform);
+        self.set_direction(data, runner, bullet, bullet_position, target_position);
         if let Some(act) = self.act {
             let arena = &self.bml.arena;
             let bullet =
@@ -831,8 +831,8 @@ impl RunnerImpl {
         data: &mut D,
         runner: &dyn AppRunner<D, B>,
         bullet: &B,
-        bullet_transform: &Transform,
-        target_transform: &Transform,
+        bullet_position: &Vec3,
+        target_position: &Vec3,
     ) {
         if let Some(act) = self.act {
             let arena = &self.bml.arena;
@@ -852,8 +852,8 @@ impl RunnerImpl {
                                 data,
                                 runner,
                                 bullet,
-                                bullet_transform,
-                                target_transform,
+                                bullet_position,
+                                target_position,
                             ),
                             false,
                         )
@@ -1196,8 +1196,8 @@ mod test_runner {
         fn get_aim_direction(
             &self,
             _data: &TestAppData<'a>,
-            _bullet_transform: &Transform,
-            _target_transform: &Transform,
+            _bullet_position: &Vec3,
+            _target_position: &Vec3,
         ) -> f64 {
             0.
         }
@@ -1219,7 +1219,7 @@ mod test_runner {
             data: &mut TestAppData<'a>,
             direction: f64,
             speed: f64,
-            _bullet_transform: &Transform,
+            _bullet_position: &Vec3,
             _commands: &mut Commands,
         ) {
             data.logs[self.index]
@@ -1233,7 +1233,7 @@ mod test_runner {
             state: State,
             direction: f64,
             speed: f64,
-            _bullet_transform: &Transform,
+            _bullet_position: &Vec3,
             _commands: &mut Commands,
         ) {
             data.logs[self.index]
@@ -1296,8 +1296,8 @@ mod test_runner {
             iteration: u32,
             logs: &mut Vec<TestLog>,
             bullet: &mut TestBullet,
-            bullet_transform: &Transform,
-            target_transform: &Transform,
+            bullet_position: &Vec3,
+            target_position: &Vec3,
             commands: &mut Commands,
         ) {
             let mut new_runners = Vec::new();
@@ -1307,8 +1307,8 @@ mod test_runner {
                     runner.run(
                         &mut TestAppData { logs },
                         bullet,
-                        bullet_transform,
-                        target_transform,
+                        bullet_position,
+                        target_position,
                         commands,
                     );
                     new_runners.extend(&mut runner.new_runners.drain(..));
@@ -1328,8 +1328,8 @@ mod test_runner {
             max_iter: u32,
             logs: &mut Vec<TestLog>,
             bullet: &mut TestBullet,
-            bullet_transform: &Transform,
-            target_transform: &Transform,
+            bullet_position: &Vec3,
+            target_position: &Vec3,
             commands: &mut Commands,
         ) {
             let runner = Runner::new(TestAppRunner::new(self.runners.len()), bml);
@@ -1339,8 +1339,8 @@ mod test_runner {
                     i,
                     logs,
                     bullet,
-                    bullet_transform,
-                    target_transform,
+                    bullet_position,
+                    target_position,
                     commands,
                 );
             }
@@ -1365,8 +1365,8 @@ mod test_runner {
         let mut manager = TestManager::new();
         let mut logs = Vec::new();
         let mut bullet = TestBullet;
-        let bullet_transform = Transform::default();
-        let target_transform = Transform::default();
+        let bullet_position = Vec3::default();
+        let target_position = Vec3::default();
         let mut command_queue = CommandQueue::default();
         let world = World::new();
         let mut commands = Commands::new(&mut command_queue, &world);
@@ -1375,8 +1375,8 @@ mod test_runner {
             100,
             &mut logs,
             &mut bullet,
-            &bullet_transform,
-            &target_transform,
+            &bullet_position,
+            &target_position,
             &mut commands,
         );
         logs[0].assert_log(r#"=== 0"#, 1);
@@ -1415,8 +1415,8 @@ mod test_runner {
         let mut manager = TestManager::new();
         let mut logs = Vec::new();
         let mut bullet = TestBullet;
-        let bullet_transform = Transform::default();
-        let target_transform = Transform::default();
+        let bullet_position = Vec3::default();
+        let target_position = Vec3::default();
         let mut command_queue = CommandQueue::default();
         let world = World::new();
         let mut commands = Commands::new(&mut command_queue, &world);
@@ -1425,8 +1425,8 @@ mod test_runner {
             110000,
             &mut logs,
             &mut bullet,
-            &bullet_transform,
-            &target_transform,
+            &bullet_position,
+            &target_position,
             &mut commands,
         );
         logs[0].assert_log(r#"=== 0"#, 1);
@@ -1580,8 +1580,8 @@ mod test_runner {
         let mut manager = TestManager::new();
         let mut logs = Vec::new();
         let mut bullet = TestBullet;
-        let bullet_transform = Transform::default();
-        let target_transform = Transform::default();
+        let bullet_position = Vec3::default();
+        let target_position = Vec3::default();
         let mut command_queue = CommandQueue::default();
         let world = World::new();
         let mut commands = Commands::new(&mut command_queue, &world);
@@ -1590,8 +1590,8 @@ mod test_runner {
             1000,
             &mut logs,
             &mut bullet,
-            &bullet_transform,
-            &target_transform,
+            &bullet_position,
+            &target_position,
             &mut commands,
         );
         logs[0].assert_log(r#"=== 0"#, 1);
@@ -1702,8 +1702,8 @@ mod test_runner {
         let mut manager = TestManager::new();
         let mut logs = Vec::new();
         let mut bullet = TestBullet;
-        let bullet_transform = Transform::default();
-        let target_transform = Transform::default();
+        let bullet_position = Vec3::default();
+        let target_position = Vec3::default();
         let mut command_queue = CommandQueue::default();
         let world = World::new();
         let mut commands = Commands::new(&mut command_queue, &world);
@@ -1712,8 +1712,8 @@ mod test_runner {
             100,
             &mut logs,
             &mut bullet,
-            &bullet_transform,
-            &target_transform,
+            &bullet_position,
+            &target_position,
             &mut commands,
         );
         logs[0].assert_log(r#"=== 0"#, 1);
@@ -1796,8 +1796,8 @@ mod test_runner {
         let mut manager = TestManager::new();
         let mut logs = Vec::new();
         let mut bullet = TestBullet;
-        let bullet_transform = Transform::default();
-        let target_transform = Transform::default();
+        let bullet_position = Vec3::default();
+        let target_position = Vec3::default();
         let mut command_queue = CommandQueue::default();
         let world = World::new();
         let mut commands = Commands::new(&mut command_queue, &world);
@@ -1806,8 +1806,8 @@ mod test_runner {
             100,
             &mut logs,
             &mut bullet,
-            &bullet_transform,
-            &target_transform,
+            &bullet_position,
+            &target_position,
             &mut commands,
         );
         logs[0].assert_log(r#"=== 0"#, 1);
@@ -1913,8 +1913,8 @@ mod test_runner {
         let mut manager = TestManager::new();
         let mut logs = Vec::new();
         let mut bullet = TestBullet;
-        let bullet_transform = Transform::default();
-        let target_transform = Transform::default();
+        let bullet_position = Vec3::default();
+        let target_position = Vec3::default();
         let mut command_queue = CommandQueue::default();
         let world = World::new();
         let mut commands = Commands::new(&mut command_queue, &world);
@@ -1923,8 +1923,8 @@ mod test_runner {
             100,
             &mut logs,
             &mut bullet,
-            &bullet_transform,
-            &target_transform,
+            &bullet_position,
+            &target_position,
             &mut commands,
         );
         logs[0].assert_log(r#"=== 0"#, 1);
@@ -2036,8 +2036,8 @@ mod test_runner {
         let mut manager = TestManager::new();
         let mut logs = Vec::new();
         let mut bullet = TestBullet;
-        let bullet_transform = Transform::default();
-        let target_transform = Transform::default();
+        let bullet_position = Vec3::default();
+        let target_position = Vec3::default();
         let mut command_queue = CommandQueue::default();
         let world = World::new();
         let mut commands = Commands::new(&mut command_queue, &world);
@@ -2046,8 +2046,8 @@ mod test_runner {
             100,
             &mut logs,
             &mut bullet,
-            &bullet_transform,
-            &target_transform,
+            &bullet_position,
+            &target_position,
             &mut commands,
         );
         logs[0].assert_log(r#"=== 0"#, 1);

@@ -18,8 +18,8 @@ pub trait AppRunner<D, B: Component> {
     fn get_aim_direction(
         &self,
         data: &D,
-        bullet_transform: &Transform,
-        target_transform: &Transform,
+        bullet_position: &Vec3,
+        target_position: &Vec3,
     ) -> f64;
     /// Gets this bullet's speed based on application data.
     fn get_bullet_speed(&self, data: &D, bullet: &B) -> f64;
@@ -40,7 +40,7 @@ pub trait AppRunner<D, B: Component> {
         data: &mut D,
         direction: f64,
         speed: f64,
-        bullet_transform: &Transform,
+        bullet_position: &Vec3,
         commands: &mut Commands,
     );
     /// Tells the application to create a bullet based on the given `state`, initial `direction`
@@ -55,7 +55,7 @@ pub trait AppRunner<D, B: Component> {
         state: State,
         direction: f64,
         speed: f64,
-        bullet_transform: &Transform,
+        bullet_position: &Vec3,
         commands: &mut Commands,
     );
     /// Gets the current iteration number.
