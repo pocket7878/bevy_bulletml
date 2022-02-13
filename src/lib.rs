@@ -9,11 +9,13 @@ extern crate matches;
 extern crate thiserror;
 
 pub use app_runner::AppRunner;
+pub use bulletml_server::BulletMLServer;
 pub use runner::Runner;
 pub use state::State;
 pub use tree::BulletML;
 
 mod app_runner;
+mod bulletml_server;
 pub mod errors;
 mod parameters;
 pub mod parse;
