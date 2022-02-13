@@ -1,3 +1,5 @@
+use std::rc::Rc;
+use crate::BulletML;
 use indextree::NodeId;
 
 use crate::tree::BulletMLType;
@@ -9,6 +11,7 @@ use crate::parameters::Parameters;
 ///
 /// See also [AppRunner::create_bullet](trait.AppRunner.html#tymethod.create_bullet).
 pub struct State {
+	pub bml: Rc<BulletML>,
 	pub bml_type: Option<BulletMLType>,
 	pub nodes: Box<[NodeId]>,
 	pub parameters: Parameters,

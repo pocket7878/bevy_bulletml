@@ -1,3 +1,4 @@
+use std::rc::Rc;
 use bevy::prelude::*;
 use indextree::{Arena, Node, NodeId};
 use std::collections::HashSet;
@@ -14,7 +15,6 @@ use crate::tree::{
 ///
 /// `D` is the type of the application data used in the [AppRunner](trait.AppRunner.html) callbacks.
 pub struct RunnerData<'a, D: 'a> {
-    pub bml: &'a BulletML,
     pub data: &'a mut D,
 }
 
@@ -25,13 +25,13 @@ pub struct Runner<R> {
     app_runner: R,
 }
 
-impl<'a, R> Runner<R> {
+impl<R> Runner<R> {
     /// Creates a new runner for all the "top" actions of the provided BulletML document.
     ///
     /// `app_runner` is the application runner which contains all the specific behaviours.
     ///
     /// `bml` is the parsed BulletML document to be used by the runner until the bullet dies.
-    pub fn new(app_runner: R, bml: &BulletML) -> Self {
+    pub fn new(app_runner: R, bml: Rc<BulletML>) -> Self {
         let bml_type = bml.get_type();
         let runners = bml
             .root
@@ -42,6 +42,7 @@ impl<'a, R> Runner<R> {
             })
             .map(|action| {
                 let state = State {
+                    bml: bml.clone(),
                     bml_type,
                     nodes: Box::new([action]),
                     parameters: Vec::new(),
@@ -61,7 +62,7 @@ impl<'a, R> Runner<R> {
     /// `app_runner` is the application runner which contains all the specific behaviours.
     ///
     /// `bml` is the parsed BulletML document to be used by the runner until the bullet dies.
-    pub fn init<D, B: Component>(&mut self, bml: &BulletML)
+    pub fn init<D, B: Component>(&mut self, bml: Rc<BulletML>)
     where
         R: AppRunner<D, B>,
     {
@@ -72,6 +73,7 @@ impl<'a, R> Runner<R> {
             child_node.get().is_top_action()
         }) {
             let state = State {
+                bml: bml.clone(),
                 bml_type,
                 nodes: Box::new([action]),
                 parameters: Vec::new(),
@@ -248,6 +250,7 @@ struct StackedRef {
 }
 
 pub struct RunnerImpl {
+    bml: Rc<BulletML>,
     bml_type: Option<BulletMLType>,
     nodes: Box<[NodeId]>,
     root_nodes: HashSet<NodeId>,
@@ -277,6 +280,7 @@ impl RunnerImpl {
             root_nodes.insert(*node);
         }
         RunnerImpl {
+            bml: state.bml,
             bml_type: state.bml_type,
             nodes: state.nodes,
             root_nodes,
@@ -428,7 +432,7 @@ impl RunnerImpl {
         target_transform: &Transform,
         commands: &mut Commands,
     ) {
-        let bml = data.bml;
+        let bml = self.bml.clone();
         while let Some(act) = self.act {
             if self.is_turn_end() {
                 break;
@@ -628,7 +632,7 @@ impl RunnerImpl {
     ) {
         if let Some(act) = self.act {
             let direction =
-                Self::get_first_child_matching(&data.bml.arena, act, BulletMLNode::match_direction);
+                Self::get_first_child_matching(&self.bml.arena, act, BulletMLNode::match_direction);
             if let Some((dir_type, dir)) = direction {
                 let direction =
                     self.get_direction(dir_type, dir, data, runner, bullet, bullet_transform, target_transform);
@@ -670,7 +674,7 @@ impl RunnerImpl {
     ) {
         if let Some(act) = self.act {
             let speed =
-                Self::get_first_child_matching(&data.bml.arena, act, BulletMLNode::match_speed);
+                Self::get_first_child_matching(&self.bml.arena, act, BulletMLNode::match_speed);
             if let Some((spd_type, spd)) = speed {
                 let speed = self.get_speed(spd_type, spd, data, runner, bullet);
                 self.spd.set(speed);
@@ -687,9 +691,9 @@ impl RunnerImpl {
         bullet_transform: &Transform,
         target_transform: &Transform,
     ) {
-        let arena = &data.bml.arena;
         self.set_speed(data, runner, bullet);
         self.set_direction(data, runner, bullet, bullet_transform, target_transform);
+        let arena = &self.bml.arena;
         if !self.spd.is_valid() {
             let default = runner.get_default_speed();
             self.spd.set(default);
@@ -708,6 +712,7 @@ impl RunnerImpl {
             runner.create_simple_bullet(&mut data.data, self.dir.get(), self.spd.get(), bullet_transform, commands);
         } else {
             let state = State {
+                bml: self.bml.clone(),
                 bml_type: self.bml_type,
                 nodes: all_actions.into_boxed_slice(),
                 parameters: self.parameters.clone(),
@@ -736,7 +741,7 @@ impl RunnerImpl {
         self.set_speed(data, runner, bullet);
         self.set_direction(data, runner, bullet, bullet_transform, target_transform);
         if let Some(act) = self.act {
-            let arena = &data.bml.arena;
+            let arena = &self.bml.arena;
             let bullet =
                 Self::get_first_child_id_matching(arena, act, BulletMLNode::match_any_bullet);
             if bullet.is_some() {
@@ -766,10 +771,10 @@ impl RunnerImpl {
         data: &mut RunnerData<D>,
         runner: &dyn AppRunner<D, B>,
     ) {
-        let times = Self::get_first_child_matching(&data.bml.arena, act, BulletMLNode::match_times);
+        let times = Self::get_first_child_matching(&self.bml.arena, act, BulletMLNode::match_times);
         if let Some(times) = times {
             let times = self.get_number_contents(times, data, runner) as usize;
-            let arena = &data.bml.arena;
+            let arena = &self.bml.arena;
             let action =
                 Self::get_first_child_id_matching(arena, act, BulletMLNode::match_any_action);
             self.repeat_stack.push(RepeatElem {
@@ -807,7 +812,7 @@ impl RunnerImpl {
         target_transform: &Transform,
     ) {
         if let Some(act) = self.act {
-            let arena = &data.bml.arena;
+            let arena = &self.bml.arena;
             let term = Self::get_first_child_matching(arena, act, BulletMLNode::match_term);
             if let Some(term) = term {
                 let direction =
@@ -884,7 +889,7 @@ impl RunnerImpl {
         bullet: &B,
     ) {
         if let Some(act) = self.act {
-            let arena = &data.bml.arena;
+            let arena = &self.bml.arena;
             let term = Self::get_first_child_matching(arena, act, BulletMLNode::match_term);
             if let Some(term) = term {
                 let speed = Self::get_first_child_matching(arena, act, BulletMLNode::match_speed);
@@ -924,7 +929,7 @@ impl RunnerImpl {
         bullet: &B,
     ) {
         if let Some(act) = self.act {
-            let arena = &data.bml.arena;
+            let arena = &self.bml.arena;
             let term = Self::get_first_child_matching(arena, act, BulletMLNode::match_term);
             if let Some(term) = term {
                 let term = self.get_number_contents(term, data, runner) as u32;
@@ -1004,10 +1009,10 @@ impl RunnerImpl {
         data: &mut RunnerData<D>,
         runner: &dyn AppRunner<D, B>,
     ) -> Parameters {
-        let children = self.act.unwrap().children(&data.bml.arena);
+        let children = self.act.unwrap().children(&self.bml.arena);
         let mut parameters = Vec::new();
         for child in children {
-            let child_node = &data.bml.arena[child];
+            let child_node = &self.bml.arena[child];
             if let BulletMLNode::Param(expr) = child_node.get() {
                 parameters.push(self.get_number_contents(*expr, data, runner));
             }
@@ -1025,11 +1030,11 @@ impl RunnerImpl {
             BulletMLExpression::Const(value) => value,
             BulletMLExpression::Expr(expr) => {
                 let rank = runner.get_rank(&data.data);
-                let expr_ref = expr.from(&data.bml.expr_slab.ps);
+                let expr_ref = expr.from(&self.bml.expr_slab.ps);
                 use fasteval::Evaler;
                 expr_ref
                     .eval(
-                        &data.bml.expr_slab,
+                        &self.bml.expr_slab,
                         &mut |name: &str, args: Vec<f64>| match (name, args.as_slice()) {
                             ("v", &[i]) => Some(self.parameters[i as usize - 1]),
                             ("rank", &[]) => Some(rank),
@@ -1052,7 +1057,8 @@ struct RepeatElem {
 
 #[cfg(test)]
 mod test_runner {
-    use super::{AppRunner, Runner, RunnerData, State};
+    use std::rc::Rc;
+use super::{AppRunner, Runner, RunnerData, State};
     use crate::parse::BulletMLParser;
     use crate::tree::{BulletML, BulletMLNode};
     use bevy::{prelude::*, ecs::system::CommandQueue};
@@ -1063,7 +1069,7 @@ mod test_runner {
         new_runners: Vec<Runner<TestAppRunner>>,
     }
 
-    impl From<Runner<TestAppRunner>> for TestAppRunner {
+    impl<'a> From<Runner<TestAppRunner>> for TestAppRunner {
         fn from(runner: Runner<TestAppRunner>) -> Self {
             runner.app_runner
         }
@@ -1252,14 +1258,12 @@ mod test_runner {
     }
 
     struct TestManager {
-        bml: BulletML,
         runners: Vec<Runner<TestAppRunner>>,
     }
 
     impl<'a> TestManager {
-        fn new(bml: BulletML) -> Self {
+        fn new() -> Self {
             TestManager {
-                bml,
                 runners: Vec::new(),
             }
         }
@@ -1279,7 +1283,6 @@ mod test_runner {
                     runner.app_runner.log_iteration(iteration, logs);
                     runner.run(
                         &mut RunnerData {
-                            bml: &self.bml,
                             data: &mut TestAppData { logs },
                         },
                         bullet,
@@ -1300,6 +1303,7 @@ mod test_runner {
 
         fn run_test(
             &mut self,
+            bml: Rc<BulletML>,
             max_iter: u32,
             logs: &mut Vec<TestLog>,
             bullet: &mut TestBullet,
@@ -1307,7 +1311,7 @@ mod test_runner {
             target_transform: &Transform,
             commands: &mut Commands,
         ) {
-            let runner = Runner::new(TestAppRunner::new(self.runners.len()), &self.bml);
+            let runner = Runner::new(TestAppRunner::new(self.runners.len()), bml);
             self.runners.push(runner);
             for i in 0..max_iter {
                 self.run(i, logs, bullet, bullet_transform, target_transform, commands);
@@ -1330,7 +1334,7 @@ mod test_runner {
 </bulletml>"##,
             )
             .unwrap();
-        let mut manager = TestManager::new(bml);
+        let mut manager = TestManager::new();
         let mut logs = Vec::new();
         let mut bullet = TestBullet;
         let bullet_transform = Transform::default();
@@ -1339,6 +1343,7 @@ mod test_runner {
         let world = World::new();
         let mut commands = Commands::new(&mut command_queue, &world);
         manager.run_test(
+            Rc::new(bml),
             100,
             &mut logs,
             &mut bullet,
@@ -1379,7 +1384,7 @@ mod test_runner {
 </bulletml>"##,
             )
             .unwrap();
-        let mut manager = TestManager::new(bml);
+        let mut manager = TestManager::new();
         let mut logs = Vec::new();
         let mut bullet = TestBullet;
         let bullet_transform = Transform::default();
@@ -1388,6 +1393,7 @@ mod test_runner {
         let world = World::new();
         let mut commands = Commands::new(&mut command_queue, &world);
         manager.run_test(
+            Rc::new(bml),
             110000,
             &mut logs,
             &mut bullet,
@@ -1543,7 +1549,7 @@ mod test_runner {
     </bulletml>"##,
             )
             .unwrap();
-        let mut manager = TestManager::new(bml);
+        let mut manager = TestManager::new();
         let mut logs = Vec::new();
         let mut bullet = TestBullet;
         let bullet_transform = Transform::default();
@@ -1552,6 +1558,7 @@ mod test_runner {
         let world = World::new();
         let mut commands = Commands::new(&mut command_queue, &world);
         manager.run_test(
+            Rc::new(bml),
             1000,
             &mut logs,
             &mut bullet,
@@ -1664,7 +1671,7 @@ mod test_runner {
 </bulletml>"##,
             )
             .unwrap();
-        let mut manager = TestManager::new(bml);
+        let mut manager = TestManager::new();
         let mut logs = Vec::new();
         let mut bullet = TestBullet;
         let bullet_transform = Transform::default();
@@ -1673,6 +1680,7 @@ mod test_runner {
         let world = World::new();
         let mut commands = Commands::new(&mut command_queue, &world);
         manager.run_test(
+            Rc::new(bml),
             100,
             &mut logs,
             &mut bullet,
@@ -1757,7 +1765,7 @@ mod test_runner {
 </bulletml>"##,
             )
             .unwrap();
-        let mut manager = TestManager::new(bml);
+        let mut manager = TestManager::new();
         let mut logs = Vec::new();
         let mut bullet = TestBullet;
         let bullet_transform = Transform::default();
@@ -1766,6 +1774,7 @@ mod test_runner {
         let world = World::new();
         let mut commands = Commands::new(&mut command_queue, &world);
         manager.run_test(
+            Rc::new(bml),
             100,
             &mut logs,
             &mut bullet,
@@ -1873,7 +1882,7 @@ mod test_runner {
 </bulletml>"##,
             )
             .unwrap();
-        let mut manager = TestManager::new(bml);
+        let mut manager = TestManager::new();
         let mut logs = Vec::new();
         let mut bullet = TestBullet;
         let bullet_transform = Transform::default();
@@ -1882,6 +1891,7 @@ mod test_runner {
         let world = World::new();
         let mut commands = Commands::new(&mut command_queue, &world);
         manager.run_test(
+            Rc::new(bml),
             100,
             &mut logs,
             &mut bullet,
@@ -1995,7 +2005,7 @@ mod test_runner {
 </bulletml>"##,
             )
             .unwrap();
-        let mut manager = TestManager::new(bml);
+        let mut manager = TestManager::new();
         let mut logs = Vec::new();
         let mut bullet = TestBullet;
         let bullet_transform = Transform::default();
@@ -2004,6 +2014,7 @@ mod test_runner {
         let world = World::new();
         let mut commands = Commands::new(&mut command_queue, &world);
         manager.run_test(
+            Rc::new(bml),
             100,
             &mut logs,
             &mut bullet,
