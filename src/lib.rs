@@ -8,7 +8,7 @@ extern crate matches;
 #[macro_use]
 extern crate thiserror;
 
-pub use runner::{Runner, RunnerData};
+pub use runner::{Runner};
 pub use app_runner::AppRunner;
 pub use tree::BulletML;
 pub use state::State;
