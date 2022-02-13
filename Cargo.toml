@@ -8,9 +8,10 @@ edition = "2021"
 license-file = "LICENSE"
 name = "bevy_bulletml"
 repository = "https://github.com/pocket7878/bevy_bulletml"
-version = "0.1.1"
+version = "0.2.0"
 
 [dependencies]
+anyhow = "1.0"
 bevy = "0.6.0"
 derive-new = "0.5"
 fasteval = "0.2"

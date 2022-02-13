@@ -1,4 +1,4 @@
-use bevy_bulletml::{parse::BulletMLParser, BulletML};
+use crate::{parse::BulletMLParser, BulletML};
 use std::collections::HashMap;
 use std::path;
 use std::sync::Arc;
