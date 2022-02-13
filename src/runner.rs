@@ -1,11 +1,11 @@
-use std::rc::Rc;
+use super::app_runner::AppRunner;
+use super::parameters::Parameters;
+use super::state::State;
 use bevy::prelude::*;
 use indextree::{Arena, Node, NodeId};
 use std::collections::HashSet;
 use std::ops::{Deref, DerefMut};
-use super::app_runner::AppRunner;
-use super::parameters::Parameters;
-use super::state::State;
+use std::sync::Arc;
 
 use crate::tree::{
     BulletML, BulletMLExpression, BulletMLNode, BulletMLType, DirectionType, HVType, SpeedType,
@@ -24,7 +24,7 @@ impl<R> Runner<R> {
     /// `app_runner` is the application runner which contains all the specific behaviours.
     ///
     /// `bml` is the parsed BulletML document to be used by the runner until the bullet dies.
-    pub fn new(app_runner: R, bml: Rc<BulletML>) -> Self {
+    pub fn new(app_runner: R, bml: Arc<BulletML>) -> Self {
         let bml_type = bml.get_type();
         let runners = bml
             .root
@@ -55,7 +55,7 @@ impl<R> Runner<R> {
     /// `app_runner` is the application runner which contains all the specific behaviours.
     ///
     /// `bml` is the parsed BulletML document to be used by the runner until the bullet dies.
-    pub fn init<D, B: Component>(&mut self, bml: Rc<BulletML>)
+    pub fn init<D, B: Component>(&mut self, bml: Arc<BulletML>)
     where
         R: AppRunner<D, B>,
     {
@@ -243,7 +243,7 @@ struct StackedRef {
 }
 
 pub struct RunnerImpl {
-    bml: Rc<BulletML>,
+    bml: Arc<BulletML>,
     bml_type: Option<BulletMLType>,
     nodes: Box<[NodeId]>,
     root_nodes: HashSet<NodeId>,
@@ -325,7 +325,14 @@ impl RunnerImpl {
         if self.act_turn.is_none() {
             self.act_turn = Some(runner.get_turn(data));
         }
-        self.run_sub(data, runner, bullet, bullet_transform, target_transform, commands);
+        self.run_sub(
+            data,
+            runner,
+            bullet,
+            bullet_transform,
+            target_transform,
+            commands,
+        );
         match self.act {
             None => {
                 self.act_iter += 1;
@@ -436,14 +443,25 @@ impl RunnerImpl {
             #[cfg(test)]
             runner.log(data, node.get());
             match node.get() {
-                BulletMLNode::Bullet { .. } => {
-                    self.run_bullet(data, runner, bullet, commands, bullet_transform, target_transform)
-                }
+                BulletMLNode::Bullet { .. } => self.run_bullet(
+                    data,
+                    runner,
+                    bullet,
+                    commands,
+                    bullet_transform,
+                    target_transform,
+                ),
                 BulletMLNode::Action { .. } => self.run_action(node),
-                BulletMLNode::Fire { .. } => self.run_fire(data, runner, bullet, bullet_transform, target_transform),
-                BulletMLNode::ChangeDirection => {
-                    self.run_change_direction(data, runner, bullet, bullet_transform, target_transform)
+                BulletMLNode::Fire { .. } => {
+                    self.run_fire(data, runner, bullet, bullet_transform, target_transform)
                 }
+                BulletMLNode::ChangeDirection => self.run_change_direction(
+                    data,
+                    runner,
+                    bullet,
+                    bullet_transform,
+                    target_transform,
+                ),
                 BulletMLNode::ChangeSpeed => self.run_change_speed(data, runner, bullet),
                 BulletMLNode::Accel => self.run_accel(data, runner, bullet),
                 BulletMLNode::Wait(expr) => self.run_wait(*expr, data, runner),
@@ -590,10 +608,9 @@ impl RunnerImpl {
                 },
                 false,
             ),
-            Some(DirectionType::Relative) => (
-                direction + runner.get_bullet_direction(data, bullet),
-                false,
-            ),
+            Some(DirectionType::Relative) => {
+                (direction + runner.get_bullet_direction(data, bullet), false)
+            }
             Some(DirectionType::Sequence) => {
                 if !self.prev_dir.is_valid() {
                     (0., true)
@@ -627,8 +644,15 @@ impl RunnerImpl {
             let direction =
                 Self::get_first_child_matching(&self.bml.arena, act, BulletMLNode::match_direction);
             if let Some((dir_type, dir)) = direction {
-                let direction =
-                    self.get_direction(dir_type, dir, data, runner, bullet, bullet_transform, target_transform);
+                let direction = self.get_direction(
+                    dir_type,
+                    dir,
+                    data,
+                    runner,
+                    bullet,
+                    bullet_transform,
+                    target_transform,
+                );
                 self.dir.set(direction);
             }
         }
@@ -702,7 +726,13 @@ impl RunnerImpl {
             |act| Self::get_children_ids_matching(arena, act, BulletMLNode::match_any_action),
         );
         if all_actions.is_empty() {
-            runner.create_simple_bullet(data, self.dir.get(), self.spd.get(), bullet_transform, commands);
+            runner.create_simple_bullet(
+                data,
+                self.dir.get(),
+                self.spd.get(),
+                bullet_transform,
+                commands,
+            );
         } else {
             let state = State {
                 bml: self.bml.clone(),
@@ -1050,11 +1080,11 @@ struct RepeatElem {
 
 #[cfg(test)]
 mod test_runner {
-    use std::rc::Rc;
-use super::{AppRunner, Runner, State};
+    use super::{AppRunner, Runner, State};
     use crate::parse::BulletMLParser;
     use crate::tree::{BulletML, BulletMLNode};
-    use bevy::{prelude::*, ecs::system::CommandQueue};
+    use bevy::{ecs::system::CommandQueue, prelude::*};
+    use std::sync::Arc;
 
     pub struct TestAppRunner {
         index: usize,
@@ -1294,7 +1324,7 @@ use super::{AppRunner, Runner, State};
 
         fn run_test(
             &mut self,
-            bml: Rc<BulletML>,
+            bml: Arc<BulletML>,
             max_iter: u32,
             logs: &mut Vec<TestLog>,
             bullet: &mut TestBullet,
@@ -1305,7 +1335,14 @@ use super::{AppRunner, Runner, State};
             let runner = Runner::new(TestAppRunner::new(self.runners.len()), bml);
             self.runners.push(runner);
             for i in 0..max_iter {
-                self.run(i, logs, bullet, bullet_transform, target_transform, commands);
+                self.run(
+                    i,
+                    logs,
+                    bullet,
+                    bullet_transform,
+                    target_transform,
+                    commands,
+                );
             }
         }
     }
@@ -1334,7 +1371,7 @@ use super::{AppRunner, Runner, State};
         let world = World::new();
         let mut commands = Commands::new(&mut command_queue, &world);
         manager.run_test(
-            Rc::new(bml),
+            Arc::new(bml),
             100,
             &mut logs,
             &mut bullet,
@@ -1384,7 +1421,7 @@ use super::{AppRunner, Runner, State};
         let world = World::new();
         let mut commands = Commands::new(&mut command_queue, &world);
         manager.run_test(
-            Rc::new(bml),
+            Arc::new(bml),
             110000,
             &mut logs,
             &mut bullet,
@@ -1549,7 +1586,7 @@ use super::{AppRunner, Runner, State};
         let world = World::new();
         let mut commands = Commands::new(&mut command_queue, &world);
         manager.run_test(
-            Rc::new(bml),
+            Arc::new(bml),
             1000,
             &mut logs,
             &mut bullet,
@@ -1671,7 +1708,7 @@ use super::{AppRunner, Runner, State};
         let world = World::new();
         let mut commands = Commands::new(&mut command_queue, &world);
         manager.run_test(
-            Rc::new(bml),
+            Arc::new(bml),
             100,
             &mut logs,
             &mut bullet,
@@ -1765,7 +1802,7 @@ use super::{AppRunner, Runner, State};
         let world = World::new();
         let mut commands = Commands::new(&mut command_queue, &world);
         manager.run_test(
-            Rc::new(bml),
+            Arc::new(bml),
             100,
             &mut logs,
             &mut bullet,
@@ -1882,7 +1919,7 @@ use super::{AppRunner, Runner, State};
         let world = World::new();
         let mut commands = Commands::new(&mut command_queue, &world);
         manager.run_test(
-            Rc::new(bml),
+            Arc::new(bml),
             100,
             &mut logs,
             &mut bullet,
@@ -2005,7 +2042,7 @@ use super::{AppRunner, Runner, State};
         let world = World::new();
         let mut commands = Commands::new(&mut command_queue, &world);
         manager.run_test(
-            Rc::new(bml),
+            Arc::new(bml),
             100,
             &mut logs,
             &mut bullet,

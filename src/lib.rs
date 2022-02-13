@@ -8,15 +8,15 @@ extern crate matches;
 #[macro_use]
 extern crate thiserror;
 
-pub use runner::{Runner};
 pub use app_runner::AppRunner;
-pub use tree::BulletML;
+pub use runner::Runner;
 pub use state::State;
+pub use tree::BulletML;
 
+mod app_runner;
 pub mod errors;
+mod parameters;
 pub mod parse;
 mod runner;
-mod tree;
-mod parameters;
 mod state;
-mod app_runner;
+mod tree;
