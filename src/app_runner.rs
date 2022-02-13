@@ -1,8 +1,8 @@
 #[cfg(test)]
 use crate::tree::BulletMLNode;
 
-use bevy::prelude::*;
 use super::state::State;
+use bevy::prelude::*;
 
 /// Application specific BulletML runner trait.
 pub trait AppRunner<D, B: Component> {
@@ -15,7 +15,12 @@ pub trait AppRunner<D, B: Component> {
     /// Gets this bullet's aim direction based on application data.
     ///
     /// The "target" related to the "aim" notion is application specific.
-    fn get_aim_direction(&self, data: &D, bullet_transform: &Transform, target_transform: &Transform) -> f64;
+    fn get_aim_direction(
+        &self,
+        data: &D,
+        bullet_transform: &Transform,
+        target_transform: &Transform,
+    ) -> f64;
     /// Gets this bullet's speed based on application data.
     fn get_bullet_speed(&self, data: &D, bullet: &B) -> f64;
     /// Gets the bullet default speed.
